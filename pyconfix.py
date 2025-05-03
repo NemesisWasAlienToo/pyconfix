@@ -316,7 +316,7 @@ class pyconfix:
         self.abort_key = 1  # Ctrl+A
         self.description_key = 4  # Ctrl+D
 
-    def show_help(self, stdscr):
+    def _show_help(self, stdscr):
         help_text = [
             "Help Page",
             "",
@@ -365,31 +365,12 @@ class pyconfix:
             elif key == ord('q') or key == self.abort_key:
                 break
 
-    def show_details(self, stdscr, options, row):
-        option, _ = options[row]
-        help_text = option.description if option.description else "No description available"
-
-        while True:
-            stdscr.clear()
-            stdscr.border(1)
-            max_y, _ = stdscr.getmaxyx()
-            if max_y >= 2:
-                stdscr.addstr(0, 2, f" {option.name} ")
-            if max_y >= 3:
-                stdscr.addstr(max_y - 2, 2, "Press any key to return to the menu")
-            if max_y >= 6:
-                stdscr.addstr(3, 2, help_text)
-            stdscr.refresh()
-            key = stdscr.getch()
-            if key != curses.KEY_RESIZE:
-                break
-
-    def load_schem(self):
+    def _load_schem(self):
         def parse_file(filepath):
             with open(filepath, 'r') as f:
                 config_data = json.load(f)
                 self.config_name = config_data.get('name', 'Configuration')
-                self.parse_options(config_data['options'], self.options)
+                self._parse_options(config_data['options'], self.options)
                 
                 # Handle includes relative to current file
                 base_path = os.path.dirname(os.path.abspath(filepath))
@@ -404,7 +385,7 @@ class pyconfix:
         for config_file in self.schem_file:
             parse_file(os.path.join(os.getcwd(), config_file))
 
-    def parse_options(self, options_data, parent_list, group_dependencies=""):
+    def _parse_options(self, options_data, parent_list, group_dependencies=""):
         for option_data in options_data:
             dependencies = option_data.get('dependencies', "")
             if group_dependencies:
@@ -421,19 +402,19 @@ class pyconfix:
                 options=[]
             )
             if option.option_type == 'group' and 'options' in option_data:
-                self.parse_options(option_data['options'], option.options, option.dependencies)
+                self._parse_options(option_data['options'], option.options, option.dependencies)
                 for opt in option.options:
                     opt.dependencies = opt.dependencies + (" && " if opt.dependencies and group_dependencies else "") + group_dependencies
             elif option.option_type == 'multiple_choice':
                 option.value = option.choices.index(option.default)
             parent_list.append(option)
 
-    def apply_config(self, config_file=None):
+    def _apply_config(self, config_file=None):
         if config_file:
             if os.path.exists(config_file):
                 with open(config_file, 'r') as f:
                     saved_config = json.load(f)
-                    self.apply_config_to_options(self.options, saved_config)
+                    self._apply_config_to_options(self.options, saved_config)
                     print(f"File loaded: {config_file}")
                     return
             print(f"Invalid config file: {config_file}")
@@ -442,28 +423,28 @@ class pyconfix:
         if os.path.exists(self.output_file):
             with open(self.output_file, 'r') as f:
                 saved_config = json.load(f)
-                self.apply_config_to_options(self.options, saved_config)
+                self._apply_config_to_options(self.options, saved_config)
 
-    def apply_config_to_options(self, options, saved_config):
+    def _apply_config_to_options(self, options, saved_config):
         for option in options:
             if option.option_type == 'group':
-                self.apply_config_to_options(option.options, saved_config)
+                self._apply_config_to_options(option.options, saved_config)
             elif option.name in saved_config:
                 value = saved_config[option.name]
                 if option.option_type == 'multiple_choice':
                     option.value = option.choices.index(value if value else option.default)
                 else:
                     option.value = value
-        self.reset_hidden_dependent_options(self.options)
+        self._reset_hidden_dependent_options(self.options)
 
-    def reset_hidden_dependent_options(self, options):
+    def _reset_hidden_dependent_options(self, options):
         for option in options:
             if option.option_type == 'group':
-                self.reset_hidden_dependent_options(option.options)
-            elif not self.is_option_available(option):
+                self._reset_hidden_dependent_options(option.options)
+            elif not self._is_option_available(option):
                 option.value = option.default if option.option_type != 'multiple_choice' else option.choices.index(option.default)
 
-    def is_option_available(self, option):
+    def _is_option_available(self, option):
         def getter_function_impl(key, options_list):
             key_upper = key.upper()
             for opt in options_list:
@@ -498,29 +479,7 @@ class pyconfix:
             return parser.evaluate_postfix(option.postfix_dependencies)
         return True
 
-    def get(self, key):
-        def get_impl(key, options_list=self.options):
-            key_upper = key.upper()
-            for opt in options_list:
-                if opt.option_type == "group":
-                    value = get_impl(key, opt.options)
-                    if value is not None:
-                        return value
-                # Compare names in a case-insensitive manner.
-                elif opt.name.upper() == key_upper:
-                    if opt.option_type == "multiple_choice":
-                        return opt.choices[opt.value] if opt.value is not None else None
-                    return opt.value
-            return None
-        value = get_impl(key)
-        if value is None:
-            raise ValueError(f"Invalid token: {key}")
-        return value
-
-    def is_dependency_met(self, dependency_string, options):
-        return any(self.option_meets_dependency(opt, dependency_string) for opt in options)
-    
-    def option_meets_dependency(self, option, dependency_string):
+    def _option_meets_dependency(self, option, dependency_string):
         if option.option_type == 'group':
             return False
         # Use case-insensitive comparison.
@@ -537,10 +496,10 @@ class pyconfix:
             return False
         return option.name.upper() == dependency_string.upper() and bool(option.value)
 
-    def flatten_options(self, options, depth=0):
+    def _flatten_options(self, options, depth=0):
         flat_options = []
         for option in options:
-            if not self.is_option_available(option):
+            if not self._is_option_available(option):
                 if option.option_type != 'group':
                     option.value = None
                 if not self.show_disabled:
@@ -550,15 +509,15 @@ class pyconfix:
                     option.value = option.choices.index(option.default) if option.option_type == 'multiple_choice' else option.default
             flat_options.append((option, depth))
             if option.option_type == 'group' and option.expanded:
-                flat_options.extend(self.flatten_options(option.options, depth + 1))
+                flat_options.extend(self._flatten_options(option.options, depth + 1))
         return flat_options
 
-    def search_options(self, options, query, depth=0):
+    def _search_options(self, options, query, depth=0):
         flat_options = []
         for option in options:
-            if self.show_disabled or self.is_option_available(option):
+            if self.show_disabled or self._is_option_available(option):
                 if option.option_type == 'group':
-                    nested_options = self.search_options(option.options, query, depth + 1)
+                    nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
                         option.expanded = True
                         flat_options.append((option, depth))
@@ -567,7 +526,7 @@ class pyconfix:
                     flat_options.append((option, depth))
         return flat_options
     
-    def description_page(self, stdscr, option):
+    def _description_page(self, stdscr, option):
         start_index = 0
         while True:
             stdscr.clear()
@@ -611,62 +570,7 @@ class pyconfix:
             elif key == ord('q'):
                 break
     
-    def prompt(self, stdscr, message):
-        message = f"{message} (Press any key)"
-        while True:
-            stdscr.clear()
-            curses.curs_set(0)
-            max_y, max_x = stdscr.getmaxyx()
-            wrapped_text = textwrap.wrap(message, max_x - 4)
-            question_lines = len(wrapped_text)
-            question_start_y = max_y // 2 - question_lines // 2 - 1
-            for i, line in enumerate(wrapped_text):
-                stdscr.addstr(question_start_y + i, (max_x - len(line)) // 2, line)
-            stdscr.refresh()
-            key = stdscr.getch()
-            if key != curses.KEY_RESIZE:
-                break
-    
-    def message_box(self, stdscr, message):
-        message = f"{message} (Press 'q' to cancel.)"
-        yes_option = "[ Yes ]"
-        no_option = "[ No ]"
-        current_option = 0
-        while True:
-            stdscr.clear()
-            curses.curs_set(0)
-            max_y, max_x = stdscr.getmaxyx()
-            wrapped_text = textwrap.wrap(message, max_x - 4)
-            question_y = max_y // 2 - 1
-            yes_y = question_y + 2
-            yes_x = (max_x // 2) - len(yes_option) - 2
-            no_y = yes_y
-            no_x = (max_x // 2) + 2
-            question_lines = len(wrapped_text)
-            question_start_y = max_y // 2 - question_lines // 2 - 1
-            for i, line in enumerate(wrapped_text):
-                stdscr.addstr(question_start_y + i, (max_x - len(line)) // 2, line)
-            if max_y > 3:
-                if current_option == 0:
-                    stdscr.attron(curses.color_pair(1))
-                    stdscr.addstr(yes_y, yes_x, yes_option)
-                    stdscr.attroff(curses.color_pair(1))
-                    stdscr.addstr(no_y, no_x, no_option)
-                else:
-                    stdscr.addstr(yes_y, yes_x, yes_option)
-                    stdscr.attron(curses.color_pair(1))
-                    stdscr.addstr(no_y, no_x, no_option)
-                    stdscr.attroff(curses.color_pair(1))
-            stdscr.refresh()
-            key = stdscr.getch()
-            if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
-                current_option = 1 - current_option
-            elif key in (curses.KEY_ENTER, 10, 13):
-                return current_option == 0
-            elif key == ord('q'):
-                return None
-
-    def display_options(self, stdscr, flat_options, start_index, current_row, search_mode):
+    def _display_options(self, stdscr, flat_options, start_index, current_row, search_mode):
         max_y, max_x = stdscr.getmaxyx()
         display_limit = max_y - 4 if not search_mode else max_y - 6
         for idx in range(start_index, min(start_index + display_limit, len(flat_options))):
@@ -697,16 +601,7 @@ class pyconfix:
             if idx == current_row:
                 stdscr.attroff(curses.color_pair(1))
 
-    def run(self, graphical=True):
-        self.load_schem()
-        self.apply_config(self.config_file)
-        if not graphical:
-            self.write_config()
-            print("Configuration dumped successfully.")
-            return
-        curses.wrapper(self.menu_loop)
-
-    def menu_loop(self, stdscr):
+    def _menu_loop(self, stdscr):
         curses.curs_set(0)
         stdscr.keypad(True)
         curses.start_color()
@@ -724,7 +619,7 @@ class pyconfix:
                 info = "Press 'q' to Exit, 's' to Save, 'c' to Collapse Group, '/' to Search" + (", 'h' for more" if self.show_disabled else "")
                 stdscr.addstr(max_y - 2, 2, info[:max_x - 5])
 
-            flat_options = self.search_options(self.options, search_query) if search_mode else self.flatten_options(self.options)
+            flat_options = self._search_options(self.options, search_query) if search_mode else self._flatten_options(self.options)
             if current_row >= len(flat_options):
                 current_row = len(flat_options) - 1
             if current_row < 0:
@@ -734,7 +629,7 @@ class pyconfix:
             elif current_row >= start_index + (max_y - 6 if search_mode else max_y - 5):
                 start_index = current_row - (max_y - 7 if search_mode else max_y - 6)
             
-            self.display_options(stdscr, flat_options, start_index, current_row, search_mode)
+            self._display_options(stdscr, flat_options, start_index, current_row, search_mode)
             if search_mode:
                 if max_y > 3:
                     stdscr.addstr(max_y - 3, 2, f"Search: {search_query}")
@@ -760,10 +655,10 @@ class pyconfix:
                     elif key == curses.KEY_DOWN and current_row < len(flat_options) - 1:
                         current_row += 1
                 elif key in (curses.KEY_ENTER, 10, 13):
-                    self.handle_enter(flat_options, current_row, stdscr, search_mode)
+                    self._handle_enter(flat_options, current_row, stdscr, search_mode)
                 elif key == self.description_key:
                     selected_option, _ = flat_options[current_row]
-                    self.description_page(stdscr, selected_option)
+                    self._description_page(stdscr, selected_option)
             else:
                 if key in (curses.KEY_UP, curses.KEY_DOWN):
                     if key == curses.KEY_UP and current_row > 0:
@@ -775,22 +670,22 @@ class pyconfix:
                         if current_row >= start_index + max_y - 4:
                             start_index += 1
                 elif key in (curses.KEY_ENTER, 10, 13):
-                    self.handle_enter(flat_options, current_row, stdscr, search_mode)
+                    self._handle_enter(flat_options, current_row, stdscr, search_mode)
                 elif key == self.save_key:
-                    self.save_config(stdscr)
+                    self._save_config(stdscr)
                 elif key == self.quite_key or key == self.abort_key:
                     break
                 elif key == self.collapse_key:
-                    current_row = self.collapse_current_group(flat_options, current_row, search_mode)
+                    current_row = self._collapse_current_group(flat_options, current_row, search_mode)
                 elif key == self.search_key:
                     search_mode, search_query, current_row = True, "", 0
                 elif key == self.help_key:
-                    self.show_help(stdscr)
+                    self._show_help(stdscr)
                 elif key == self.description_key:
                     selected_option, _ = flat_options[current_row]
-                    self.description_page(stdscr, selected_option)
+                    self._description_page(stdscr, selected_option)
 
-    def handle_enter(self, flat_options, row, stdscr, search_mode):
+    def _handle_enter(self, flat_options, row, stdscr, search_mode):
         if not flat_options:
             return
         selected_option, _ = flat_options[row]
@@ -804,15 +699,15 @@ class pyconfix:
             if not search_mode:
                 selected_option.expanded = not selected_option.expanded
         elif selected_option.option_type in ['int', 'string']:
-            self.edit_option(stdscr, selected_option)
+            self._edit_option(stdscr, selected_option)
         elif selected_option.option_type == 'multiple_choice':
-            self.edit_multiple_choice_option(stdscr, selected_option)
+            self._edit_multiple_choice_option(stdscr, selected_option)
         elif selected_option.option_type == 'action': 
             if callable(selected_option.value):
                 selected_option.value(stdscr)
-        self.reset_dependent_options(selected_option, self.options)
+        self._reset_dependent_options(selected_option, self.options)
 
-    def edit_option(self, stdscr, option):
+    def _edit_option(self, stdscr, option):
         if option.value is None:
             return
         original_value = option.value
@@ -900,7 +795,7 @@ class pyconfix:
             
         curses.curs_set(0)
 
-    def edit_multiple_choice_option(self, stdscr, option):
+    def _edit_multiple_choice_option(self, stdscr, option):
         curses.curs_set(0)
         max_y, max_x = stdscr.getmaxyx()
         current_choice = option.value if option.value is not None else 0
@@ -930,7 +825,7 @@ class pyconfix:
                 option.value = original_choice
                 break
 
-    def collapse_current_group(self, flat_options, current_row, search_mode):
+    def _collapse_current_group(self, flat_options, current_row, search_mode):
         selected_option, _ = flat_options[current_row]
         if selected_option.option_type == 'group':
             selected_option.expanded = not selected_option.expanded
@@ -945,29 +840,29 @@ class pyconfix:
                 return idx
         return current_row
 
-    def write_config(self):
-        config_data = self.flatten_options_key_value(self.options)
+    def _write_config(self):
+        config_data = self._flatten_options_key_value(self.options)
         with open(self.output_file, 'w') as f:
             json.dump(config_data, f, indent=4)
         if self.save_func:
             self.save_func(config_data, self.options)
 
-    def save_config(self, stdscr):
-        self.write_config()
+    def _save_config(self, stdscr):
+        self._write_config()
         stdscr.clear()
         stdscr.addstr(0, 0, "Configuration saved successfully.")
         stdscr.addstr(1, 0, "Press any key to continue.")
         stdscr.refresh()
         stdscr.getch()
 
-    def flatten_options_key_value(self, options):
+    def _flatten_options_key_value(self, options):
         config_data = {}
         for option in options:
             if option.option_type == 'action':
                 continue
             if option.option_type == 'group':
-                nested_data = self.flatten_options_key_value(option.options)
-                if not self.is_option_available(option):
+                nested_data = self._flatten_options_key_value(option.options)
+                if not self._is_option_available(option):
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
@@ -975,32 +870,32 @@ class pyconfix:
                 value_to_save = default_value if option.value is None else (
                     option.choices[option.value] if option.option_type == 'multiple_choice'
                     else option.value)
-                config_data[option.name] = None if not self.is_option_available(option) else value_to_save
+                config_data[option.name] = None if not self._is_option_available(option) else value_to_save
         return config_data
 
-    def reset_dependent_options(self, option, options):
+    def _reset_dependent_options(self, option, options):
         for opt in options:
             # Split dependency strings if using "&&" to combine multiple dependencies.
             for dep in [d.strip() for d in opt.dependencies.split("&&") if d.strip()]:
-                if self.option_meets_dependency(option, dep):
-                    if self.is_option_available(opt) and opt.value is None:
+                if self._option_meets_dependency(option, dep):
+                    if self._is_option_available(opt) and opt.value is None:
                         opt.value = opt.default if opt.option_type != 'multiple_choice' else opt.choices.index(opt.default)
-                        self.reset_dependent_options(opt, self.options)
+                        self._reset_dependent_options(opt, self.options)
                     if opt.option_type == 'group':
-                        self.reset_dependent_options(option, opt.options)
+                        self._reset_dependent_options(option, opt.options)
 
-    def find_option(self, name, options=None):
+    def _find_option(self, name, options=None):
         options = options or self.options
         for opt in options:
             if opt.name == name:
                 return opt
             if opt.option_type == 'group':
-                found = self.find_option(name, opt.options)
+                found = self._find_option(name, opt.options)
                 if found:
                     return found
         return None
         
-    def is_externally_restricted(self, option):
+    def _is_externally_restricted(self, option):
         if option.external:
             return True
         for dependency_string in [d.strip() for d in option.dependencies.split("&&") if d.strip()]:
@@ -1010,19 +905,76 @@ class pyconfix:
                 key, _ = match.groups()
             else:
                 key = dependency_string
-            opt = self.find_option(key)
+            opt = self._find_option(key)
             if opt is None:
                 continue
-            if self.is_externally_restricted(opt):
+            if self._is_externally_restricted(opt):
                 return True
         return False
 
-    def option_in_dependency(self, option, dependency_string):
-        if option.option_type == 'group':
-            return False
-        if dependency_string.startswith('!'):
-            return option.name == dependency_string[1:]
-        elif (match := re.match(r'^([^=]+)=([^=]+)$', dependency_string)):
-            key, _ = match.groups()
-            return option.name == key
-        return option.name == dependency_string
+    def get(self, key):
+        """
+        Retrieves the configuration value associated with the provided key. The search is performed recursively through
+        nested groups within the configuration options.
+        Parameters
+        ----------
+        key : str
+            The configuration key to search for (case-insensitive).
+        Returns
+        -------
+        Any
+            The value associated with the key. For options of type "multiple_choice", the returned value is the choice
+            corresponding to the stored index in the option's choices list.
+        Raises
+        ------
+        ValueError
+            If the key is not found within the configuration options hierarchy.
+        Notes
+        -----
+        The function leverages a recursive helper function to navigate through nested groups of options. It compares keys
+        in a case-insensitive manner and handles special processing for options of type "multiple_choice".
+        """
+
+        def get_impl(key, options_list=self.options):
+            key_upper = key.upper()
+            for opt in options_list:
+                if opt.option_type == "group":
+                    value = get_impl(key, opt.options)
+                    if value is not None:
+                        return value
+                # Compare names in a case-insensitive manner.
+                elif opt.name.upper() == key_upper:
+                    if opt.option_type == "multiple_choice":
+                        return opt.choices[opt.value] if opt.value is not None else None
+                    return opt.value
+            return None
+        value = get_impl(key)
+        if value is None:
+            raise ValueError(f"Invalid token: {key}")
+        return value
+
+    def run(self, graphical=True):
+        """
+        Run the configuration process.
+        This method performs the following steps:
+            1. Loads the schema using the internal _load_schem() method.
+            2. Applies the configuration from self.config_file using the _apply_config() method.
+            3. Depending on the 'graphical' flag:
+                - If False:
+                    a. Writes the configuration to a file using _write_config().
+                    b. Outputs a success message to the console.
+                - If True:
+                    a. Initiates an interactive menu loop using curses.wrapper with _menu_loop().
+        Parameters:
+            graphical (bool, optional): Indicates whether to run the configuration process
+                                         in graphical (interactive) mode. Defaults to True.
+        Returns:
+            None
+        """
+
+        self._load_schem()
+        self._apply_config(self.config_file)
+        if not graphical:
+            self._write_config()
+            return
+        curses.wrapper(self._menu_loop)

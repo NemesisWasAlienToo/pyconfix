@@ -1,6 +1,6 @@
 # pyconfix
 
-> *A single‑file, curses‑powered, ************************************menuconfig‑style************************************ configuration editor for any Python project.*
+> *A single‑file, curses‑powered, ************************************menuconfig‑style************************************ configuration editor for any  project.*
 
 
 

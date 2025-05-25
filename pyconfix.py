@@ -506,7 +506,7 @@ class pyconfix:
             content = [
                 "",
                 "Dependencies ",
-                option.dependencies if option.dependencies else "No dependencies",
+                (option.dependencies if not callable(option.dependencies) else "<function>") if option.dependencies else "No dependencies",
                 "",
                 "Description ",
                 option.description if option.description else "No description available"

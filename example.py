@@ -97,7 +97,7 @@ def main():
                 name='PYTHON_EVALUATED',
                 option_type='string',
                 default="UNIX",
-                evaluator=lambda x: config.get_value("ENABLE_FEATURE_A") == True
+                dependencies=lambda x: config.get_value("ENABLE_FEATURE_A") == True
         ),
         ConfigOption(
                 name='compile',

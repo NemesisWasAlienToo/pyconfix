@@ -26,8 +26,8 @@ def tokenize(expression: str):
         # Handle hexadecimal (0x) and binary (0b) prefixes
         if char == '0' and i + 1 < n and expression[i+1].lower() in ('x', 'b'):
             prefix = expression[i:i+2].lower()
+            start = i
             i += 2
-            start = i - 2
             # Parse hex digits
             if prefix == '0x':
                 while i < n and (expression[i].isdigit() or expression[i].lower() in 'abcdef'):
@@ -72,12 +72,6 @@ def tokenize(expression: str):
         elif char in ('(', ')'):
             tokens.append(char)
             i += 1
-        elif char.isalpha():
-            start = i
-            i += 1
-            while i < n and (expression[i].isalnum() or expression[i] == '_'):
-                i += 1
-                tokens.append(expression[start:i])
         else:
             raise ValueError(f"Unexpected character: {char}")
     return tokens
@@ -137,51 +131,12 @@ def shunting_yard(tokens, precedence=None):
         output.append(op)
     return output
 
-def evaluate_postfix_expr(tokens, operand_func, eval_operator):
-    """
-    Evaluates a postfix expression given:
-      - tokens: list of tokens in postfix order,
-      - operand_func: a function that returns the value for a given token,
-      - eval_operator: a function that applies an operator.
-    """
-    stack = []
-    for token in tokens:
-        if token.replace('.', '', 1).isdigit():
-            if '.' in token:
-                stack.append(float(token))
-            else:
-                stack.append(int(token))
-        elif token.lower().startswith('0x'):
-            stack.append(int(token, 16))
-        elif token.lower().startswith('0b'):
-            stack.append(int(token, 2))
-        elif token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
-            if token.startswith("'") and token.endswith("'"):
-                stack.append(token[1:-1])
-            else:
-                stack.append(operand_func(token))
-        else:
-            if token == '!':
-                if not stack:
-                    raise ValueError("Missing operand for '!'")
-                right = stack.pop()
-                stack.append(eval_operator(token, right))
-            else:
-                if len(stack) < 2:
-                    raise ValueError(f"Missing operands for '{token}'")
-                right = stack.pop()
-                left = stack.pop()
-                stack.append(eval_operator(token, right, left))
-    if len(stack) != 1:
-        raise ValueError("Invalid expression: extra items remain on the stack")
-    return stack[0]
-
 class BooleanExpressionParser:
     """
     Evaluates boolean and arithmetic expressions using tokenizing,
     postfix conversion, and evaluation routines.
     """
-    def __init__(self, getter, enumerator=None) -> None:
+    def __init__(self, getter, enumerator=None):
         self.getter = getter
         self.enumerator = enumerator if enumerator is not None else {}
 
@@ -230,14 +185,48 @@ class BooleanExpressionParser:
             raise ValueError(f"Unknown operator: {op}")
 
     def evaluate_postfix(self, tokens):
-        return evaluate_postfix_expr(tokens, self.getter, self.eval_operator)
-
-    def negate_postfix(self, tokens):
-        return evaluate_postfix_expr(tokens, self.enumerator, self.eval_operator)
+        """
+        Evaluates a postfix expression given:
+        - tokens: list of tokens in postfix order,
+        - operand_func: a function that returns the value for a given token,
+        - eval_operator: a function that applies an operator.
+        """
+        stack = []
+        for token in tokens:
+            if token.replace('.', '', 1).isdigit():
+                if '.' in token:
+                    stack.append(float(token))
+                else:
+                    stack.append(int(token))
+            # @TODO Optimize this, this can be done during tokenization
+            elif token.lower().startswith('0x'):
+                stack.append(int(token, 16))
+            elif token.lower().startswith('0b'):
+                stack.append(int(token, 2))
+            elif token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
+                if token.startswith("'") and token.endswith("'"):
+                    stack.append(token[1:-1])
+                else:
+                    stack.append(self.getter(token))
+            else:
+                if token == '!':
+                    if not stack:
+                        raise ValueError("Missing operand for '!'")
+                    right = stack.pop()
+                    stack.append(self.eval_operator(token, right))
+                else:
+                    if len(stack) < 2:
+                        raise ValueError(f"Missing operands for '{token}'")
+                    right = stack.pop()
+                    left = stack.pop()
+                    stack.append(self.eval_operator(token, right, left))
+        if len(stack) != 1:
+            raise ValueError("Invalid expression: extra items remain on the stack")
+        return stack[0]
 
 class ConfigOption:
     def __init__(self, name, option_type, default=None, external=None, data=None, description="",
-                 dependencies="", options=None, choices=None, expanded=False, evaluator=None):
+                 dependencies="", options=None, choices=None, expanded=False):
         if re.search(r'\s', name):
             raise ValueError(f"Option name cannot contain white space: {name}")
         
@@ -259,12 +248,9 @@ class ConfigOption:
         if option_type == "multiple_choice" and not isinstance(choices, list):
             raise ValueError(f"Multiple choice option {name} must have a list of choices")
 
-        if option_type == "external" and (dependencies or evaluator):
+        if option_type == "external" and dependencies:
             raise ValueError(f"External option {name} cannot have dependencies or evaluator")
 
-        if dependencies and evaluator:
-            raise ValueError(f"Option {name} cannot have both dependencies and evaluator")
-        
         self.name = name
         self.option_type = option_type
         self.value = default
@@ -276,12 +262,9 @@ class ConfigOption:
         self.options = options or []
         self.choices = choices or []
         self.expanded = expanded
-        if evaluator is not None:
-            self.evaluator = evaluator
-        else:
-            # Precompute the postfix representation of the dependency string (if any)
+
+        if dependencies and not callable(dependencies):
             self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
-            self.evaluator = None
 
     def to_dict(self):
         return {
@@ -474,12 +457,13 @@ class pyconfix:
                 raise ValueError(f"Invalid token: {key}")
             return value
 
-        if option.evaluator:
-            return option.evaluator(self.options)
-        if option.dependencies:
+        if not option.dependencies:
+            return True
+        if callable(option.dependencies):
+            return option.dependencies(self.options)
+        else:
             parser = BooleanExpressionParser(getter=getter_function)
             return parser.evaluate_postfix(option.postfix_dependencies)
-        return True
 
     def _flatten_options(self, options, depth=0):
         flat_options = []
@@ -690,8 +674,7 @@ class pyconfix:
         elif selected_option.option_type == 'multiple_choice':
             self._edit_multiple_choice_option(stdscr, selected_option)
         elif selected_option.option_type == 'action': 
-            if callable(selected_option.value):
-                selected_option.value(stdscr)
+            selected_option.default(stdscr)
 
     def _edit_option(self, stdscr, option):
         if option.value is None:

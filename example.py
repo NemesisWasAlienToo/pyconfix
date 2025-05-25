@@ -5,7 +5,8 @@ import subprocess
 import threading
 import fcntl
 import os
-import sys
+import json
+import argparse
 
 def execute_command(stdscr):
     stdscr.clear()
@@ -65,12 +66,23 @@ def custom_save(json_data, _):
 def main():
     load_file:str = None
     graphical_mode = True
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "-d" and len(sys.argv) > 2:
-            graphical_mode = False
-            load_file = sys.argv[2] if os.path.exists(sys.argv[2]) else None
-        else:
-            load_file = sys.argv[1] if os.path.exists(sys.argv[1]) else None
+    parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
+    parser.add_argument(
+        "-l", "--load",
+        metavar="FILE",
+        help="Load a configuration file"
+    )
+    parser.add_argument(
+        "-d", "--diff",
+        metavar="FILE",
+        help="Dump the diff to a file instead of running in graphical mode"
+    )
+    args = parser.parse_args()
+
+    if args.diff:
+        graphical_mode = False
+    elif args.load:
+        load_file = args.load if os.path.exists(args.load) else None
     
     config = pyconfix(schem_file=["schem.json"], config_file=load_file, save_func=custom_save, expanded=True, show_disabled=True)
 
@@ -85,7 +97,7 @@ def main():
                 name='PYTHON_EVALUATED',
                 option_type='string',
                 default="UNIX",
-                evaluator=lambda x: config.get("ENABLE_FEATURE_A") == True
+                evaluator=lambda x: config.get_value("ENABLE_FEATURE_A") == True
         ),
         ConfigOption(
                 name='compile',
@@ -98,5 +110,8 @@ def main():
     
     config.run(graphical=graphical_mode)
 
+    if not graphical_mode:
+        with open(args.diff, "w") as f:
+            json.dump(config.diff(), f, indent=4)
 if __name__ == "__main__":
     main()

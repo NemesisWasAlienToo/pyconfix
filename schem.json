@@ -15,6 +15,11 @@
             "dependencies": "OS=='WIN32'"
         },
         {
+            "name": "DISABLED_BY_DEFAULT",
+            "type": "bool",
+            "default": false
+        },
+        {
             "name": "LOG_LEVEL",
             "type": "multiple_choice",
             "default": "DEBUG",

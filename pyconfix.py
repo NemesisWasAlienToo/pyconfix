@@ -248,7 +248,7 @@ class ConfigOption:
             if default not in (choices or []):
                 raise ValueError(f"Invalid default for multiple_choice option {name}")
             if any(' ' in choice for choice in (choices or [])):
-                raise ValueError(f"Choice names cannot contain white space: {choice} in option {name}")
+                raise ValueError(f"Choice names cannot contain white space: in option {name}")
 
         if option_type == "action" and not callable(default):
             raise ValueError(f"Action option {name} must have a callable default value")
@@ -309,6 +309,7 @@ class pyconfix:
         self.config_file = config_file
 
         self.save_key = ord('s')
+        self.save_diff_key = ord('d')
         self.quite_key = ord('q')
         self.collapse_key = ord('c')
         self.search_key = ord('/')
@@ -321,16 +322,17 @@ class pyconfix:
             "Help Page",
             "",
              "Keybindings:",
-             "  Navigate              : Arrow Up/Down",
-             "  Select/Toggle option  : Enter",
-            f"  Save configuration    : {curses.keyname(self.save_key).decode()}",
-            f"  Quit                  : {curses.keyname(self.quite_key).decode()}",
-            f"  Collapse/Expand group : {curses.keyname(self.collapse_key).decode()}",
-            f"  Search                : {curses.keyname(self.search_key).decode()}",
-            f"  Show help page        : {curses.keyname(self.help_key).decode()}",
-            f"  Show description      : {curses.keyname(self.description_key).decode()}",
-            f"  Exit search           : {curses.keyname(self.abort_key).decode()}",
-            f"  Exit input box        : {curses.keyname(self.abort_key).decode()}",
+             "  Navigate                  : Arrow Up/Down",
+             "  Select/Toggle option      : Enter",
+            f"  Save configuration        : {curses.keyname(self.save_key).decode()}",
+            f"  Save diff configuration   : {curses.keyname(self.save_diff_key).decode()}",
+            f"  Quit                      : {curses.keyname(self.quite_key).decode()}",
+            f"  Collapse/Expand group     : {curses.keyname(self.collapse_key).decode()}",
+            f"  Search                    : {curses.keyname(self.search_key).decode()}",
+            f"  Show help page            : {curses.keyname(self.help_key).decode()}",
+            f"  Show description          : {curses.keyname(self.description_key).decode()}",
+            f"  Exit search               : {curses.keyname(self.abort_key).decode()}",
+            f"  Exit input box            : {curses.keyname(self.abort_key).decode()}",
              "",
              "How it works:",
              "  - Use the arrow keys to navigate through the options.",
@@ -479,23 +481,6 @@ class pyconfix:
             return parser.evaluate_postfix(option.postfix_dependencies)
         return True
 
-    def _option_meets_dependency(self, option, dependency_string):
-        if option.option_type == 'group':
-            return False
-        # Use case-insensitive comparison.
-        if dependency_string.startswith('!'):
-            return option.name.upper() == dependency_string[1:].upper() and not option.value
-        elif (match := re.match(r'^([^=]+)=([^=]+)$', dependency_string)):
-            key, value = match.groups()
-            values = [v.strip() for v in value.split(',')]
-            if option.name.upper() == key.upper():
-                if option.option_type == 'multiple_choice':
-                    return option.choices[option.value] in values
-                elif option.option_type in ['int', 'string']:
-                    return str(option.value) in values
-            return False
-        return option.name.upper() == dependency_string.upper() and bool(option.value)
-
     def _flatten_options(self, options, depth=0):
         flat_options = []
         for option in options:
@@ -616,7 +601,7 @@ class pyconfix:
             stdscr.addstr(0, 2, f" {self.config_name} ")
             max_y, max_x = stdscr.getmaxyx()
             if not search_mode and max_y > 2:
-                info = "Press 'q' to Exit, 's' to Save, 'c' to Collapse Group, '/' to Search" + (", 'h' for more" if self.show_disabled else "")
+                info = f"'{curses.keyname(self.quite_key).decode()}': Exit, '{curses.keyname(self.save_key).decode()}': Save, '{curses.keyname(self.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(self.help_key).decode()}': Help"
                 stdscr.addstr(max_y - 2, 2, info[:max_x - 5])
 
             flat_options = self._search_options(self.options, search_query) if search_mode else self._flatten_options(self.options)
@@ -672,7 +657,9 @@ class pyconfix:
                 elif key in (curses.KEY_ENTER, 10, 13):
                     self._handle_enter(flat_options, current_row, stdscr, search_mode)
                 elif key == self.save_key:
-                    self._save_config(stdscr)
+                    self._save_config(stdscr, False)
+                elif key == self.save_diff_key:
+                    self._save_config(stdscr, True)
                 elif key == self.quite_key or key == self.abort_key:
                     break
                 elif key == self.collapse_key:
@@ -705,7 +692,6 @@ class pyconfix:
         elif selected_option.option_type == 'action': 
             if callable(selected_option.value):
                 selected_option.value(stdscr)
-        self._reset_dependent_options(selected_option, self.options)
 
     def _edit_option(self, stdscr, option):
         if option.value is None:
@@ -840,28 +826,34 @@ class pyconfix:
                 return idx
         return current_row
 
-    def _write_config(self):
-        config_data = self._flatten_options_key_value(self.options)
+    def _write_config(self, as_diff=True):
+        config_data = self.diff() if as_diff else self.dump(self.options)
         with open(self.output_file, 'w') as f:
             json.dump(config_data, f, indent=4)
         if self.save_func:
             self.save_func(config_data, self.options)
 
-    def _save_config(self, stdscr):
-        self._write_config()
+    def _save_config(self, stdscr, as_diff):
+        self._write_config(as_diff)
         stdscr.clear()
         stdscr.addstr(0, 0, "Configuration saved successfully.")
         stdscr.addstr(1, 0, "Press any key to continue.")
         stdscr.refresh()
         stdscr.getch()
 
-    def _flatten_options_key_value(self, options):
+    def dump(self, options):
+        """
+        Retrieves the current configurations as json.
+        Returns
+            dict
+                The current configurations.
+        """
         config_data = {}
         for option in options:
             if option.option_type == 'action':
                 continue
             if option.option_type == 'group':
-                nested_data = self._flatten_options_key_value(option.options)
+                nested_data = self.dump(option.options)
                 if not self._is_option_available(option):
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
@@ -873,85 +865,80 @@ class pyconfix:
                 config_data[option.name] = None if not self._is_option_available(option) else value_to_save
         return config_data
 
-    def _reset_dependent_options(self, option, options):
-        for opt in options:
-            # Split dependency strings if using "&&" to combine multiple dependencies.
-            for dep in [d.strip() for d in opt.dependencies.split("&&") if d.strip()]:
-                if self._option_meets_dependency(option, dep):
-                    if self._is_option_available(opt) and opt.value is None:
-                        opt.value = opt.default if opt.option_type != 'multiple_choice' else opt.choices.index(opt.default)
-                        self._reset_dependent_options(opt, self.options)
-                    if opt.option_type == 'group':
-                        self._reset_dependent_options(option, opt.options)
-
-    def _find_option(self, name, options=None):
-        options = options or self.options
-        for opt in options:
-            if opt.name == name:
-                return opt
-            if opt.option_type == 'group':
-                found = self._find_option(name, opt.options)
-                if found:
-                    return found
-        return None
-        
-    def _is_externally_restricted(self, option):
-        if option.external:
-            return True
-        for dependency_string in [d.strip() for d in option.dependencies.split("&&") if d.strip()]:
-            if dependency_string.startswith('!'):
-                key = dependency_string[1:]
-            elif (match := re.match(r'^([^=]+)=([^=]+)$', dependency_string)):
-                key, _ = match.groups()
-            else:
-                key = dependency_string
-            opt = self._find_option(key)
-            if opt is None:
-                continue
-            if self._is_externally_restricted(opt):
-                return True
-        return False
-
     def get(self, key):
         """
-        Retrieves the configuration value associated with the provided key. The search is performed recursively through
+        Retrieves the configuration object associated with the provided key. The search is performed recursively through
         nested groups within the configuration options.
         Parameters
-        ----------
-        key : str
-            The configuration key to search for (case-insensitive).
+            key : str
+                The configuration key to search for (case-insensitive).
         Returns
-        -------
-        Any
-            The value associated with the key. For options of type "multiple_choice", the returned value is the choice
-            corresponding to the stored index in the option's choices list.
+            Any
+                The object associated with the key.
         Raises
-        ------
-        ValueError
-            If the key is not found within the configuration options hierarchy.
+            ValueError
+                If the key is not found within the configuration options hierarchy.
         Notes
-        -----
-        The function leverages a recursive helper function to navigate through nested groups of options. It compares keys
-        in a case-insensitive manner and handles special processing for options of type "multiple_choice".
+            The function compares keys in a case-insensitive manner.
         """
 
         def get_impl(key, options_list=self.options):
             key_upper = key.upper()
             for opt in options_list:
                 if opt.option_type == "group":
-                    value = get_impl(key, opt.options)
-                    if value is not None:
-                        return value
+                    found, value = get_impl(key, opt.options)
+                    if found:
+                        return True, value
                 # Compare names in a case-insensitive manner.
                 elif opt.name.upper() == key_upper:
-                    if opt.option_type == "multiple_choice":
-                        return opt.choices[opt.value] if opt.value is not None else None
-                    return opt.value
-            return None
-        value = get_impl(key)
-        if value is None:
+                    return True, opt
+            return False, None
+        found, value = get_impl(key)
+        if not found:
             raise ValueError(f"Invalid token: {key}")
         return value
+
+    def get_value(self, key):
+        """
+        Retrieves the configuration value associated with the provided key. The search is performed recursively through
+        nested groups within the configuration options.
+        Parameters
+            key : str
+                The configuration key to search for (case-insensitive).
+        Returns
+            Any
+                The value associated with the key. For options of type "multiple_choice", the returned value is the choice
+                corresponding to the stored index in the option's choices list.
+        Raises
+            ValueError
+                If the key is not found within the configuration options hierarchy.
+        Notes
+            The function compares keys in a case-insensitive manner.
+        """
+        opt = self.get(key)
+        if opt.option_type == "multiple_choice":
+            return opt.choices[opt.value] if opt.value is not None else None
+        return opt.value
+
+    def diff(self):
+        """
+        Compute and return a dictionary of configuration differences.
+        This method flattens the options into a key-value dictionary and compares each
+        value to its default value. Only keys with values differing from the default are
+        included in the resulting dictionary. The result of this function can be used
+        to generate minimal configs which can be loaded and as far as they are not changed
+        in the scheme (but other options are potentially added) are backwards compaible
+        Returns:
+            dict: A dictionary containing keys with values that differ from their default settings.
+        """
+
+        diff = {}
+        for key, value in self.dump(self.options).items():
+            opt = self.get(key)
+            av = self._is_option_available(opt)
+            if av and (value != opt.default):
+                diff[key] = value
+        return diff
 
     def run(self, graphical=True):
         """
@@ -968,8 +955,6 @@ class pyconfix:
         Parameters:
             graphical (bool, optional): Indicates whether to run the configuration process
                                          in graphical (interactive) mode. Defaults to True.
-        Returns:
-            None
         """
 
         self._load_schem()

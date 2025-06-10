@@ -9,12 +9,6 @@
             "data": ["WIN32"]
         },
         {
-            "name": "ENABLE_FEATURE_B",
-            "type": "bool",
-            "default": 0,
-            "dependencies": "OS=='WIN32'"
-        },
-        {
             "name": "DISABLED_BY_DEFAULT",
             "type": "bool",
             "default": false

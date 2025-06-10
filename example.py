@@ -1,57 +1,17 @@
 from pyconfix import pyconfix, ConfigOption
 
-import curses
-import subprocess
-import threading
-import fcntl
-import os
-import json
 import argparse
+import time
 
-def execute_command(stdscr):
-    stdscr.clear()
-    curses.endwin()
-    print("\033[?1049l", end="")
+def build(x):
+    print("Building...")
+    time.sleep(2)
+    return True
 
-    # Command to run
-    command = "while true; do echo 'hi'; sleep 1; done"
-
-    def read_output(process, stdscr, stop_event):
-        curses.endwin()
-        # Set stdout to non-blocking mode
-        flags = fcntl.fcntl(process.stdout, fcntl.F_GETFL)
-        fcntl.fcntl(process.stdout, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-        
-        while not stop_event.is_set():
-            try:
-                output = process.stdout.readline()
-                if output == "" and process.poll() is not None:
-                    break
-                if output:
-                    print(f"{output}", end="\r")
-            except IOError:
-                pass  # Ignore empty reads
-
-    # Event to signal when to stop reading output
-    stop_event = threading.Event()
-    
-    # Start the command with stdout being piped
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    
-    # Start a separate thread to read the output
-    output_thread = threading.Thread(target=read_output, args=(process, stdscr, stop_event))
-    output_thread.start()
-    
-    # Wait for user input to cancel
-    while process.poll() is None:
-        key = stdscr.getch()
-        if key == ord('q'):
-            stop_event.set()
-            process.terminate()
-            break
-
-    # Wait for the output thread to finish
-    output_thread.join()
+def deploy(stdscr):
+    print("Deploying...")
+    time.sleep(2)
+    return True
 
 def custom_save(json_data, _):
     with open("output_defconfig", 'w') as f:
@@ -73,18 +33,46 @@ def main():
         help="Load a configuration file"
     )
     parser.add_argument(
+        "-r", "--run",
+        metavar="ACTION",
+        help="Runs an action"
+    )
+    parser.add_argument(
+        "-c", "--cli",
+        action="store_true",
+        help="Run in CLI mode instead of graphical mode"
+    )
+    parser.add_argument(
         "-d", "--diff",
-        metavar="FILE",
-        help="Dump the diff to a file instead of running in graphical mode"
+        action="store_true",
+        help="Save the setting as diff instead of a full config"
+    )
+    parser.add_argument(
+        "-o", "--option",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Pass key=value pairs. Can be used multiple times."
     )
     args = parser.parse_args()
+    options_dict = {}
+    for item in args.option:
+        if "=" not in item:
+            parser.error(f"Invalid format for option '{item}'. Expected KEY=VALUE.")
+        key, value = item.split("=", 1)
+        options_dict[key] = value
+    for key, value in options_dict.items():
+        if value.lower() in ["true", "false"]:
+            options_dict[key] = value.lower() == "true"
+        elif value.isdigit():
+            options_dict[key] = int(value)
+        else:
+            options_dict[key] = value
 
-    if args.diff:
-        graphical_mode = False
-    elif args.load:
-        load_file = args.load if os.path.exists(args.load) else None
+    graphical_mode = not args.cli
+    load_file = args.load if args.load else None
     
-    config = pyconfix(schem_file=["schem.json"], config_file=load_file, save_func=custom_save, expanded=True, show_disabled=True)
+    config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
 
     config.options.extend([
         ConfigOption(
@@ -97,21 +85,31 @@ def main():
                 name='PYTHON_EVALUATED',
                 option_type='string',
                 default="UNIX",
-                dependencies=lambda x: config.get_value("ENABLE_FEATURE_A") == True
+                dependencies=lambda x: x.ENABLE_FEATURE_A
         ),
         ConfigOption(
-                name='compile',
+                name='build',
                 option_type="action",
                 description="Compiles the code",
                 dependencies="ENABLE_FEATURE_A",
-                default=execute_command
-        )
+                default=build,
+                requires=lambda x: x.LOG_LEVEL
+        ),
+        ConfigOption(
+                name='deploy',
+                option_type="action",
+                description="Deploys the code",
+                dependencies="ENABLE_FEATURE_A",
+                default=deploy,
+                requires=lambda x: x.build(),
+        ),
     ])
     
-    config.run(graphical=graphical_mode)
+    config.run(config_file=load_file, graphical=graphical_mode, as_diff=args.diff, overlay=options_dict)
 
     if not graphical_mode:
-        with open(args.diff, "w") as f:
-            json.dump(config.diff(), f, indent=4)
+        if args.run:
+            print(f"{args.run}: {config.get(args.run)()}")
+
 if __name__ == "__main__":
     main()

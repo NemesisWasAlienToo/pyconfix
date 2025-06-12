@@ -366,148 +366,57 @@ class pyconfix:
             elif key == ord('q') or key == self.abort_key:
                 break
 
-    def _load_schem(self):
-        def parse_file(filepath):
-            with open(filepath, 'r') as f:
-                config_data = json.load(f)
-                self.config_name = config_data.get('name', 'Configuration')
-                self.options += self._parse_options(config_data['options'])
-                
-                # Handle includes relative to current file
-                base_path = os.path.dirname(os.path.abspath(filepath))
-                for include_file in config_data.get('include', []):
-                    include_path = os.path.join(base_path, include_file)
-                    if not os.path.exists(include_path):
-                        print(f"File {filepath} includes a non-existing file: {include_path}")
-                        exit()
-                    parse_file(include_path)
-
-        # Parse each config file in the list
-        for schem_file in self.schem_files:
-            parse_file(os.path.join(os.getcwd(), schem_file))
-
-        def combine(a, b):
-            if a is None:
-                return b
-            if b is None:
-                return a
-            
-            if not callable(a) and not callable(b):
-                return b + (" && " if b and a else "") + a
-            elif callable(a) and callable(b):
-                return lambda x: a(x) and b(x)
-            else:
-                raise ValueError("Cannot mix callable and non-callable in a group's dependencies and requires")
-
-        def cascade_group(options, group_dependencies = None, group_requires = None):
-            """Cascade dependencies and requires from groups to their options."""
-            for opt in options:
-                if group_dependencies:
-                    opt.dependencies = combine(group_dependencies, opt.dependencies)
-                    # @TODO: Maybe mix this somehow with the constructor or remove the one there
-                    opt.postfix_dependencies = shunting_yard(tokenize(opt.dependencies))
-                if group_requires:
-                    opt.requires = combine(group_requires, opt.requires)
-                if opt.option_type == 'group':
-                    cascade_group(opt.options, opt.dependencies, opt.requires)
-
-        cascade_group(self.options)
-
-    # @TODO: Fix callable group dependencies
-    def _parse_options(self, options_data):
-        parsed_options = []
-        for option_data in options_data:
-            option = ConfigOption(
-                name=option_data['name'],
-                option_type=option_data['type'],
-                default=option_data.get('default'),
-                description=option_data.get('description'),
-                data=option_data.get('data'),
-                dependencies=option_data.get('dependencies', ""),
-                requires=option_data.get('requires', ""),
-                choices=option_data.get('choices', []),
-                expanded=self.expanded,
-                options=[]
-            )
-            if option.option_type == 'group' and 'options' in option_data:
-                option.options = self._parse_options(option_data['options'])
-            elif option.option_type == 'multiple_choice':
-                option.value = option.choices.index(option.default)
-            parsed_options.append(option)
-        return parsed_options
-
-    def _apply_config(self, config_file=None, overlay=None):
-        saved_config = {}
-        if config_file:
-            if not os.path.exists(config_file):
-                print(f"Invalid config file: {config_file}")
-                exit()
-            with open(config_file, 'r') as f:
-                saved_config = json.load(f)
-                print(f"File loaded: {config_file}")
-        elif os.path.exists(self.output_file):
-            with open(self.output_file, 'r') as f:
-                saved_config = json.load(f)
-
-        if overlay:
-            saved_config.update(overlay)
-
-        self._apply_config_to_options(self.options, saved_config)
-
     def _apply_config_to_options(self, options, saved_config):
         for option in options:
             if option.option_type == 'group':
                 self._apply_config_to_options(option.options, saved_config)
             elif option.name in saved_config:
                 value = saved_config[option.name]
-                if option.option_type == 'multiple_choice':
-                    option.value = option.choices.index(value if value else option.default)
-                else:
-                    option.value = value
-        self._reset_hidden_dependent_options(self.options)
-
-    def _reset_hidden_dependent_options(self, options):
-        for option in options:
-            if option.option_type == 'group':
-                self._reset_hidden_dependent_options(option.options)
-            elif not self._is_option_available(option):
+                option.value = option.choices.index(value if value else option.default) if option.option_type == 'multiple_choice' else value
+            else:
                 option.value = option.default if option.option_type != 'multiple_choice' else option.choices.index(option.default)
 
     def _is_option_available(self, option):
-        def getter_function_impl(key, options_list):
-            key_upper = key.upper()
-            for opt in options_list:
-                if opt.option_type == "group":
-                    value = getter_function_impl(key, opt.options)
-                    if value is not None:
-                        return value
-                # Compare names in a case-insensitive manner.
-                elif opt.name.upper() == key_upper:
-                    default_value = opt.default
-                    if opt.option_type == "multiple_choice":
-                        default_value = opt.choices.index(opt.default)
-                        return opt.choices[opt.value] if opt.value is not None else default_value
-                    return opt.value if opt.value is not None else default_value
-                # If an enum value being parsed as key instead of a key name
-                elif opt.option_type == "multiple_choice":
-                    for choice in opt.choices:
-                        if choice.upper() == key_upper:
-                            return key
-            return None
+        def _is_option_available_impl(option, root):
+            def getter_function_impl(key, options_list):
+                key_upper = key.upper()
+                if key_upper == root:
+                    raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
+                for opt in options_list:
+                    if opt.option_type == "group":
+                        found, value = getter_function_impl(key, opt.options)
+                        if found:
+                            return True, value
+                    # Compare names in a case-insensitive manner.
+                    elif opt.name.upper() == key_upper:
+                        if not _is_option_available_impl(opt, root):
+                            return True, False
+                        default_value = opt.default
+                        if opt.option_type == "multiple_choice":
+                            default_value = opt.choices.index(opt.default)
+                            return True, opt.choices[opt.value] if opt.value is not None else default_value
+                        return True, opt.value if opt.value is not None else default_value
+                    # If an enum value being parsed as key instead of a key name
+                    elif opt.option_type == "multiple_choice":
+                        for choice in opt.choices:
+                            if choice.upper() == key_upper:
+                                return True, key
+                return False, None
 
-        def getter_function(key):
-            value = getter_function_impl(key, self.options)
-            if value is None:
-                raise ValueError(f"Invalid token: {key}")
-            return value
+            def getter_function(key):
+                found, value = getter_function_impl(key, self.options)
+                if not found:
+                    raise ValueError(f"Invalid token: {key}")
+                return value
 
-        if not option.dependencies:
-            return True
-        if callable(option.dependencies):
-            return option.dependencies(self)
-        else:
-            parser = BooleanExpressionParser(getter=getter_function)
-            return parser.evaluate_postfix(option.postfix_dependencies)
+            if not option.dependencies:
+                return True
+            if callable(option.dependencies):
+                return option.dependencies(self)
+            else:
+                parser = BooleanExpressionParser(getter=getter_function)
+                return parser.evaluate_postfix(option.postfix_dependencies)
+        return _is_option_available_impl(option, option.name)
 
     def _flatten_options(self, options, depth=0):
         flat_options = []
@@ -700,17 +609,17 @@ class pyconfix:
                 elif key == self.description_key:
                     selected_option, _ = flat_options[current_row]
                     self._description_page(stdscr, selected_option)
-
+    
     def _execute_action(self, option):
         class ExecutionSession:
-            def __init__(self, config):
+            def __init__(self, config, root):
                 self.config = config
                 self.cache = {}
+                self.root = root
 
             def _execute_action(self, option):
-                if (not self.config._is_option_available(option)) or (option.requires and not option.requires(self)):
-                        return False
-
+                if (option.requires and not option.requires(self)):
+                        return None
                 if option.name in self.cache:
                     return self.cache[option.name]
                 value = option.default(self)
@@ -718,7 +627,13 @@ class pyconfix:
                 return value
 
             def __getattr__(self, name):
+                if name == self.root:
+                    raise AttributeError(f"Cycle detected: '{name}'")
                 opt = self.config._get(name)
+                if not self.config._is_option_available(opt):
+                    if opt.option_type == "action":
+                        return lambda : None
+                    return None
                 if opt is None:
                     raise AttributeError(f"Invalid key: '{name}'")
                 if opt.option_type == "multiple_choice":
@@ -729,21 +644,23 @@ class pyconfix:
                     return opt.options
                 return opt.value
             
-        return ExecutionSession(self)._execute_action(option)
+        return ExecutionSession(self, option.name)._execute_action(option)
 
     def _handle_enter(self, flat_options, row, stdscr, search_mode):
         if not flat_options:
             return
         selected_option, _ = flat_options[row]
-        if selected_option.value is None and selected_option.option_type not in ['group', 'action']:
+        if selected_option.option_type == 'group':
+            if not search_mode:
+                selected_option.expanded = not selected_option.expanded
+                return
+        # If value is None, the option is diasabled, skip
+        if selected_option.value is None:
             return
         if selected_option.external:
             return
         if selected_option.option_type == 'bool':
             selected_option.value = not selected_option.value
-        elif selected_option.option_type == 'group':
-            if not search_mode:
-                selected_option.expanded = not selected_option.expanded
         elif selected_option.option_type in ['int', 'string']:
             self._edit_option(stdscr, selected_option)
         elif selected_option.option_type == 'multiple_choice':
@@ -758,7 +675,7 @@ class pyconfix:
             curses.noecho()
             curses.cbreak()
             stdscr.keypad(True)
-            
+            return
 
     def _edit_option(self, stdscr, option):
         if option.value is None:
@@ -893,21 +810,21 @@ class pyconfix:
                 return idx
         return current_row
 
-    def _write_config(self, as_diff=True):
+    def _write_config(self, output_diff=True):
         config_data = self.dump()
         with open(self.output_file, 'w') as f:
             json.dump(config_data, f, indent=4)
         if self.save_func:
             self.save_func(config_data, self.options)
-        if as_diff:
+        if output_diff:
             config_data = self.diff()
             with open(self.output_diff_config, 'w') as f:
                 json.dump(config_data, f, indent=4)
             if self.save_diff_func:
                 self.save_diff_func(config_data, self.options)
 
-    def _save_config(self, stdscr, as_diff):
-        self._write_config(as_diff)
+    def _save_config(self, stdscr, output_diff):
+        self._write_config(output_diff)
         stdscr.clear()
         stdscr.addstr(0, 0, "Configuration saved successfully.")
         stdscr.addstr(1, 0, "Press any key to continue.")
@@ -936,6 +853,10 @@ class pyconfix:
         opt = self._get(name)
         if opt is None:
             raise AttributeError(f"Invalid key: '{name}'")
+        if not self._is_option_available(opt):
+            if opt.option_type == "action":
+                return lambda : None
+            return None
         if opt.option_type == "multiple_choice":
             return opt.choices[opt.value] if opt.value is not None else None
         elif opt.option_type == "action":
@@ -960,6 +881,103 @@ class pyconfix:
         if not found:
             return None
         return value
+    
+    def load_schem(self, schem_files):
+        """
+        Load configuration schema from JSON files.
+        :param schem_files: List of JSON schema files.
+        """
+        def parse_file(filepath):
+            with open(filepath, 'r') as f:
+                config_data = json.load(f)
+                self.config_name = config_data.get('name', 'Configuration')
+                self.options += self.parse_options(config_data['options'])
+                
+                # Handle includes relative to current file
+                base_path = os.path.dirname(os.path.abspath(filepath))
+                for include_file in config_data.get('include', []):
+                    include_path = os.path.join(base_path, include_file)
+                    if not os.path.exists(include_path):
+                        print(f"File {filepath} includes a non-existing file: {include_path}")
+                        exit()
+                    parse_file(include_path)
+
+        # Parse each config file in the list
+        for schem_file in schem_files:
+            parse_file(os.path.join(os.getcwd(), schem_file))
+
+        def combine(a, b):
+            if a is None:
+                return b
+            if b is None:
+                return a
+            
+            if not callable(a) and not callable(b):
+                return b + (" && " if b and a else "") + a
+            elif callable(a) and callable(b):
+                return lambda x: a(x) and b(x)
+            else:
+                raise ValueError("Cannot mix callable and non-callable in a group's dependencies and requires")
+
+        def cascade_group(options, group_dependencies = None, group_requires = None):
+            """Cascade dependencies and requires from groups to their options."""
+            for opt in options:
+                if group_dependencies:
+                    opt.dependencies = combine(group_dependencies, opt.dependencies)
+                    # @TODO: Maybe mix this somehow with the constructor or remove the one there
+                    opt.postfix_dependencies = shunting_yard(tokenize(opt.dependencies))
+                if group_requires:
+                    opt.requires = combine(group_requires, opt.requires)
+                if opt.option_type == 'group':
+                    cascade_group(opt.options, opt.dependencies, opt.requires)
+
+        cascade_group(self.options)
+
+    # @TODO: Fix callable group dependencies
+    def parse_options(self, options_data):
+        parsed_options = []
+        for option_data in options_data:
+            option = ConfigOption(
+                name=option_data['name'],
+                option_type=option_data['type'],
+                default=option_data.get('default'),
+                description=option_data.get('description'),
+                data=option_data.get('data'),
+                dependencies=option_data.get('dependencies', ""),
+                requires=option_data.get('requires', ""),
+                choices=option_data.get('choices', []),
+                expanded=self.expanded,
+                options=[]
+            )
+            if option.option_type == 'group' and 'options' in option_data:
+                option.options = self.parse_options(option_data['options'])
+            elif option.option_type == 'multiple_choice':
+                option.value = option.choices.index(option.default)
+            parsed_options.append(option)
+        return parsed_options
+
+    def apply_config(self, config_file=None, overlay=None):
+        """
+        Apply configuration from a file or overlay.
+        :param config_file: Optional path to a JSON config file.
+        :param overlay: Optional dictionary to override settings.
+        """
+        saved_config = {}
+        if config_file:
+            if not os.path.exists(config_file):
+                print(f"Invalid config file: {config_file}")
+                exit()
+            with open(config_file, 'r') as f:
+                saved_config = json.load(f)
+                print(f"File loaded: {config_file}")
+        elif os.path.exists(self.output_file):
+            with open(self.output_file, 'r') as f:
+                saved_config = json.load(f)
+
+        if overlay:
+            saved_config.update(overlay)
+
+        self._apply_config_to_options(self.options, saved_config)
 
     def dump(self):
         """
@@ -979,26 +997,39 @@ class pyconfix:
                 diff[key] = value
         return diff
 
-    def get(self, key):
+    def get(self, key, default=None):
         """
         Get an option by its name.
         """
-        return self.__getattr__(key)
+        value = self.__getattr__(key)
+        if value is None:
+            return default
+        return value
+    
+    def run_main_loop(self):
+        """
+        Run the main interactive loop using curses.
+        """
+        curses.wrapper(self._menu_loop)
 
-    def run(self, config_file=None, overlay=None, graphical=True, as_diff=False):
+    def run(self, config_file=None, overlay=None, graphical=True, output_diff=False, write_to_file=True):
         """
         Run the configuration process.
-        Parameters:
-            graphical (bool, optional): Indicates whether to run the configuration process
-                                         in graphical (interactive) mode. Defaults to True.
-            as_diff   (bool, optional): Indicates whether in the cli mode the full configuraion
-                                         should be saved or the diff. In graphical mode, this
-                                         option has no effect.
+        :param config_file: Optional config file path.
+        :param overlay: Optional dict to override settings.
+        :param graphical: Use interactive mode if True.
+        :param output_diff: Save config diff in CLI mode if True.
+        :param write_to_file: Write output to file if True, else return a dict.
+        :return: dict if write_to_file is False.
         """
         self.graphical = graphical
-        self._load_schem()
-        self._apply_config(config_file=config_file, overlay=overlay)
-        if not graphical:
-            self._write_config(as_diff=as_diff)
-            return
-        curses.wrapper(self._menu_loop)
+        self.load_schem(self.schem_files)
+        self.apply_config(config_file=config_file, overlay=overlay)
+        if graphical:
+            self.run_main_loop()
+        if not write_to_file:
+            if output_diff:
+                return self.diff()
+            return self.dump()
+        self._write_config(output_diff=output_diff)
+        return None

@@ -8,8 +8,13 @@ def build(x):
     time.sleep(2)
     return True
 
-def deploy(stdscr):
+def deploy(x):
     print("Deploying...")
+    time.sleep(2)
+    return True
+
+def test(x):
+    print("Testing...")
     time.sleep(2)
     return True
 
@@ -53,6 +58,11 @@ def main():
         default=[],
         metavar="KEY=VALUE",
         help="Pass key=value pairs. Can be used multiple times."
+    )
+    parser.add_argument(
+        "--no-file-write",
+        action="store_true",
+        help="PDisables the file writing functionalit and returns the configuration as a dictionary."
     )
     args = parser.parse_args()
     options_dict = {}
@@ -103,9 +113,19 @@ def main():
                 default=deploy,
                 requires=lambda x: x.build(),
         ),
+        ConfigOption(
+                name='test',
+                option_type="action",
+                description="Tests the code",
+                default=test,
+                requires=lambda x: x.deploy(),
+        ),
     ])
     
-    config.run(config_file=load_file, graphical=graphical_mode, as_diff=args.diff, overlay=options_dict)
+    d = config.run(config_file=load_file, graphical=graphical_mode, output_diff=args.diff, overlay=options_dict, write_to_file=not args.no_file_write)
+
+    if args.no_file_write:
+        print(f"Configuration loaded: {d}")
 
     if not graphical_mode:
         if args.run:

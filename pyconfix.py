@@ -1012,7 +1012,7 @@ class pyconfix:
         """
         curses.wrapper(self._menu_loop)
 
-    def run(self, config_file=None, overlay=None, graphical=True, output_diff=False, write_to_file=True):
+    def run(self, config_file=None, overlay=None, graphical=True, output_diff=False):
         """
         Run the configuration process.
         :param config_file: Optional config file path.
@@ -1027,9 +1027,28 @@ class pyconfix:
         self.apply_config(config_file=config_file, overlay=overlay)
         if graphical:
             self.run_main_loop()
-        if not write_to_file:
-            if output_diff:
-                return self.diff()
-            return self.dump()
         self._write_config(output_diff=output_diff)
-        return None
+    
+    def action_option(self, name=None, dependencies="", requires=""):
+        """
+        Decorator to register a function as an action option.
+        When applied, the function is added to self.options as an action.
+        Usage:
+            @config.action_option(requires=lambda x: x.build())
+            def my_action(config):
+                '''Action description'''
+                ...
+        """
+        def decorator(func):
+            option_name = name or func.__name__
+            new_option = ConfigOption(
+                name=option_name,
+                option_type="action",
+                default=func,
+                dependencies=dependencies,
+                requires=requires,
+                description=func.__doc__ or ""
+            )
+            self.options.append(new_option)
+            return func
+        return decorator

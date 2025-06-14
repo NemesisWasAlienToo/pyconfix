@@ -1,23 +1,9 @@
 from pyconfix import pyconfix, ConfigOption
-
 import argparse
 import time
 
-def build(x):
-    print("Building...")
-    time.sleep(2)
-    return True
-
-def deploy(x):
-    print("Deploying...")
-    time.sleep(2)
-    return True
-
-def test(x):
-    print("Testing...")
-    time.sleep(2)
-    return True
-
+### This function saves the current configurations in a defconfig-like format.
+### Custom save functions can be used to export the settings in any format.
 def custom_save(json_data, _):
     with open("output_defconfig", 'w') as f:
         for key, value in json_data.items():
@@ -29,8 +15,9 @@ def custom_save(json_data, _):
                 f.write(f"CONFIG_{key}={value if value != True else 'y'}\n")
 
 def main():
-    load_file:str = None
-    graphical_mode = True
+    #################################################
+    ################ Parse arguments ################
+    #################################################
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
     parser.add_argument(
         "-l", "--load",
@@ -41,6 +28,11 @@ def main():
         "-r", "--run",
         metavar="ACTION",
         help="Runs an action"
+    )
+    parser.add_argument(
+        "-p", "--print",
+        metavar="OPTION",
+        help="Prints the value of an option"
     )
     parser.add_argument(
         "-c", "--cli",
@@ -79,11 +71,40 @@ def main():
         else:
             options_dict[key] = value
 
-    graphical_mode = not args.cli
-    load_file = args.load if args.load else None
     
+    #################################################
+    ############## Run prconfix examlpe #############
+    #################################################
     config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
 
+    ### Actions can be added using a decorator
+    @config.action_option(
+        requires=lambda x: x.LOG_LEVEL, 
+        dependencies="ENABLE_FEATURE_A",
+    )
+    def build(x):
+        print("Building...")
+        time.sleep(2)
+        return True
+    
+    @config.action_option(
+        requires=lambda x: x.build(),
+        dependencies="ENABLE_FEATURE_A",
+    )
+    def deploy(x):
+        print("Deploying...")
+        time.sleep(2)
+        return True
+    
+    @config.action_option(
+        requires=lambda x: x.deploy(),
+    )
+    def test(x):
+        print("Testing...")
+        time.sleep(2)
+        return True
+    
+    ### Config options can also be added by calling extend on the config's options
     config.options.extend([
         ConfigOption(
             name='OS',
@@ -97,39 +118,19 @@ def main():
                 default="UNIX",
                 dependencies=lambda x: x.ENABLE_FEATURE_A
         ),
-        ConfigOption(
-                name='build',
-                option_type="action",
-                description="Compiles the code",
-                dependencies="ENABLE_FEATURE_A",
-                default=build,
-                requires=lambda x: x.LOG_LEVEL
-        ),
-        ConfigOption(
-                name='deploy',
-                option_type="action",
-                description="Deploys the code",
-                dependencies="ENABLE_FEATURE_A",
-                default=deploy,
-                requires=lambda x: x.build(),
-        ),
-        ConfigOption(
-                name='test',
-                option_type="action",
-                description="Tests the code",
-                default=test,
-                requires=lambda x: x.deploy(),
-        ),
     ])
     
-    d = config.run(config_file=load_file, graphical=graphical_mode, output_diff=args.diff, overlay=options_dict, write_to_file=not args.no_file_write)
+    ### Config can load files, overlays and run in either TUI or CLI mode
+    config.run(config_file=args.load, overlay=options_dict, graphical=not args.cli, output_diff=args.diff)
 
-    if args.no_file_write:
-        print(f"Configuration loaded: {d}")
-
-    if not graphical_mode:
+    ### Option values can be accessed as attributes.
+    ### Actions can then be run by calling them as methods.
+    ### Options can also be retrieved using the get method.
+    if args.cli:
         if args.run:
             print(f"{args.run}: {config.get(args.run)()}")
+        if args.print:
+            print(f"{args.print}: {config.get(args.print)}")
 
 if __name__ == "__main__":
     main()

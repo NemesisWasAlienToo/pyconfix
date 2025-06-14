@@ -1,6 +1,6 @@
 # pyconfix
 
-> A single‑file, curses‑powered, menuconfig‑style configuration editor for any project.
+> A single‑file, curses‑powered, highly customizable, menuconfig‑style configuration editor for any project.
 
 ---
 
@@ -21,8 +21,6 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 * Pluggable save hook – write JSON, YAML, C headers, env‑files – whatever.
 * Action options – define executable tasks with dependencies that can be run interactively or via CLI.
 * 100% standard library (Windows users: `pip install windows‑curses`).
-
----
 
 ## Installation
 
@@ -51,8 +49,6 @@ python menu.py
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
 
----
-
 ## Headless / CI mode
 
 Run the schema parser non‑interactively to dump a JSON config – handy for scripts and pipelines:
@@ -67,8 +63,6 @@ cfg = pyconfix.pyconfix(
 cfg.run(graphical=False, config_file="prev.json")
 PY
 ```
-
----
 
 ## Python API
 
@@ -101,8 +95,6 @@ pyconfix(
     show_disabled: bool = False,
 )
 ```
-
----
 
 ## Actions
 
@@ -163,8 +155,6 @@ cfg.options.extend([
   result = cfg.build()
   ```
 
----
-
 ## Key bindings
 
 | Action             | Key    |
@@ -178,8 +168,6 @@ cfg.options.extend([
 | Help               | h      |
 | Abort search/input | Ctrl+A |
 | Quit               | q      |
-
----
 
 ## Schema format
 
@@ -234,8 +222,6 @@ VALUE<<2 > 1024                         # left shift + relational
 VALUE>>1 == 0                           # right shift + equality
 ```
 
----
-
 ## Advanced usage
 
 ```python
@@ -253,13 +239,48 @@ pyconfix.pyconfix(
 ).run()
 ```
 
----
+## Export in any format
+The configurations can be exported in any desirable format by using custom save functions. Here is an example pf the current configurations bein exported in the kconfig format:
+```py
+def custom_save(json_data, _):
+    with open("output_defconfig", 'w') as f:
+        for key, value in json_data.items():
+            if value == None or (isinstance(value, bool) and value == False):
+                continue
+            if isinstance(value, str):
+                f.write(f"CONFIG_{key}=\"{value}\"\n")
+            else:
+                f.write(f"CONFIG_{key}={value if value != True else 'y'}\n")
+
+# ...
+# The rest of the code
+# ...
+
+config = pyconfix(schem_files=["schem.json"], save_func=custom_save)
+
+# ...
+# The rest of the code
+# ...
+```
 
 ## Practical remarks
 
-There are multiple ways of attain the value of an option
+There are multiple ways of attain the value of an option. Options can be treated as config's attributes or their value can be retrieved using the `get` function:
 
----
+```py
+config = pyconfix(schem_files=["schem.json"])
+config.run()
+
+# Options can be treated as attributes
+print(f"{config.FEATURES_NAME}")
+print(f"{config.ACTIONS_NAME()}")
+
+# Options can be retrieved using `get` function
+print(f"{config.get("FEATURES_NAME", False)}")
+print(f"{config.get("ACTIONS_NAME", lambda: False)()}")
+```
+
+__IMPORTANT:__ The big difference between attribute syntax and `get` function is that in case of such an option not existing, the attribute syntax will throw an exception while the `get` function returns the default value provided to it.
 
 ## Conan integration example
 
@@ -296,8 +317,6 @@ Call it with:
 python pyconfix.py              # produce settings.json
 CFG=settings.json conan install .
 ```
-
----
 
 ## Roadmap
 

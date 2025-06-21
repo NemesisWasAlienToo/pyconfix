@@ -646,6 +646,47 @@ class pyconfix:
             
         return ExecutionSession(self, option.name)._execute_action(option)
 
+    def _execute_action_with_trace(self, option):
+        """Execute an action and return the call stack trace."""
+        trace = []
+
+        class TraceExecutionSession:
+            def __init__(self, config, root):
+                self.config = config
+                self.cache = {}
+                self.root = root
+
+            def _execute_action(self, opt):
+                if opt.requires and not opt.requires(self):
+                    return None
+                if opt.name in self.cache:
+                    return self.cache[opt.name]
+                trace.append(opt.name)
+                value = opt.default(self)
+                self.cache[opt.name] = value
+                return value
+
+            def __getattr__(self, name):
+                if name == self.root:
+                    raise AttributeError(f"Cycle detected: '{name}'")
+                opt = self.config._get(name)
+                if not self.config._is_option_available(opt):
+                    if opt.option_type == "action":
+                        return lambda: None
+                    return None
+                if opt is None:
+                    raise AttributeError(f"Invalid key: '{name}'")
+                if opt.option_type == "multiple_choice":
+                    return opt.choices[opt.value] if opt.value is not None else None
+                elif opt.option_type == "action":
+                    return lambda: self._execute_action(opt)
+                elif opt.option_type == "group":
+                    return opt.options
+                return opt.value
+
+        value = TraceExecutionSession(self, option.name)._execute_action(option)
+        return value, trace
+
     def _handle_enter(self, flat_options, row, stdscr, search_mode):
         if not flat_options:
             return

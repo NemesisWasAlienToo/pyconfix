@@ -611,19 +611,21 @@ class pyconfix:
                     self._description_page(stdscr, selected_option)
     
     def _execute_action(self, option):
+        trace = []
         class ExecutionSession:
             def __init__(self, config, root):
                 self.config = config
                 self.cache = {}
                 self.root = root
 
-            def _execute_action(self, option):
-                if (option.requires and not option.requires(self)):
-                        return None
-                if option.name in self.cache:
-                    return self.cache[option.name]
-                value = option.default(self)
-                self.cache[option.name] = value
+            def _execute_action(self, opt):
+                if opt.requires and not opt.requires(self):
+                    return None
+                if opt.name in self.cache:
+                    return self.cache[opt.name]
+                trace.append(opt.name)
+                value = opt.default(self)
+                self.cache[opt.name] = value
                 return value
 
             def __getattr__(self, name):
@@ -632,19 +634,19 @@ class pyconfix:
                 opt = self.config._get(name)
                 if not self.config._is_option_available(opt):
                     if opt.option_type == "action":
-                        return lambda : None
+                        return lambda: None
                     return None
                 if opt is None:
                     raise AttributeError(f"Invalid key: '{name}'")
                 if opt.option_type == "multiple_choice":
                     return opt.choices[opt.value] if opt.value is not None else None
                 elif opt.option_type == "action":
-                    return lambda : self._execute_action(opt)
+                    return lambda: self._execute_action(opt)
                 elif opt.option_type == "group":
                     return opt.options
                 return opt.value
             
-        return ExecutionSession(self, option.name)._execute_action(option)
+        return ExecutionSession(self, option.name)._execute_action(option), trace
 
     def _handle_enter(self, flat_options, row, stdscr, search_mode):
         if not flat_options:

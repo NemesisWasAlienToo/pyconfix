@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [Unreleased]
+### Added
+- Stack trace for action execution
+
+### Changed
+- Empty
+
+### Fixed
+- Empty
+
+### Deprecated
+- Empty
+
+### Removed
+- --no-file-write flag in example.py removed since it was superficial and can be reproduced with other functions
+
+### Security
+- Empty
+
+---
+
 ## [0.7.0] - 2025-06-14
 ### Added
 - action_option decorator added for easy function addition

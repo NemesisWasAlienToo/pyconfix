@@ -51,11 +51,6 @@ def main():
         metavar="KEY=VALUE",
         help="Pass key=value pairs. Can be used multiple times."
     )
-    parser.add_argument(
-        "--no-file-write",
-        action="store_true",
-        help="PDisables the file writing functionalit and returns the configuration as a dictionary."
-    )
     args = parser.parse_args()
     options_dict = {}
     for item in args.option:
@@ -128,7 +123,9 @@ def main():
     ### Options can also be retrieved using the get method.
     if args.cli:
         if args.run:
-            print(f"{args.run}: {config.get(args.run)()}")
+            value, trace = config.get(args.run)()
+            if args.trace:
+                print(f"Trace for {args.run}: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
 

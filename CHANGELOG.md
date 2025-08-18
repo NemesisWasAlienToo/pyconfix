@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- Empty
+
+### Changed
+- Empty
+
+### Fixed
+- Empty
+
+### Deprecated
+- Empty
+
+### Removed
+- Empty
+
+### Security
+- Empty
+
+---
+
+## [0.8.0]
+### Added
 - Stack trace for action execution
 - Added capability to create groups and actions in it using decorators
 - Added create_config fucntoin architecure example in the example for integration with other tools like conan, CMake, etc
@@ -24,9 +45,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Removed
 - --no-file-write flag in example.py removed since it was superficial and could be reproduced with other functions
-
-### Security
-- Empty
 
 ---
 

@@ -15,7 +15,7 @@
         },
         {
             "name": "LOG_LEVEL",
-            "type": "multiple_choice",
+            "type": "enum",
             "default": "DEBUG",
             "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
             "dependencies": "ENABLE_FEATURE_A"

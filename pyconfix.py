@@ -10,6 +10,7 @@ import curses
 import curses.textpad
 import os
 import textwrap
+from enum import StrEnum
 
 # --- Utility Functions ---
 def tokenize(expression: str):
@@ -227,46 +228,52 @@ class BooleanExpressionParser:
             raise ValueError("Invalid expression: extra items remain on the stack")
         return stack[0]
 
+class ConfigOptionType(StrEnum):
+    BOOL = "bool"
+    INT = "int"
+    STRING="string"
+    ENUM = "enum"
+    ACTION= "action"
+    GROUP = "group"
+    EXTERNAL = "external"
+
 class ConfigOption:
-    def __init__(self, name, option_type, default=None, external=None, data=None, description="",
+    def __init__(self, name, option_type:ConfigOptionType, default=None, external=None, data=None, description="",
                  dependencies="", options=None, choices=None, expanded=False, requires=None):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
         
-        if option_type not in ["bool", "int", "string", "multiple_choice", "action", "group"]:
-            raise ValueError(f"Invalid option type {option_type}")
-        
-        if option_type == "multiple_choice":
+        if option_type == ConfigOptionType.ENUM:
             if len(choices or []) < 1:
                 raise ValueError(f"Multiple choice option {name} must have at least one choice")
             if default not in (choices or []):
-                raise ValueError(f"Invalid default for multiple_choice option {name}: {default}")
+                raise ValueError(f"Invalid default for enum option {name}: {default}")
             if any(' ' in choice for choice in (choices or [])):
                 raise ValueError(f"Choice names cannot contain white space: in option {name}")
 
-        if option_type == "action" and not callable(default):
+        if option_type == ConfigOptionType.ACTION and not callable(default):
             raise ValueError(f"Action option {name} must have a callable default value")
 
-        if option_type != "action" and option_type != "group" and requires:
+        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and requires:
             raise ValueError(f"The 'requires' parameter is only valid for action and group options, not {option_type} options")
         
         if requires:
             if not callable(requires):
                 raise ValueError(f"Requires for option {name} must be a callable")
 
-        if option_type == "group" and not isinstance(options, list):
+        if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
             raise ValueError(f"Group option {name} must have a list of options")
 
-        if option_type == "multiple_choice" and not isinstance(choices, list):
+        if option_type == ConfigOptionType.ENUM and not isinstance(choices, list):
             raise ValueError(f"Multiple choice option {name} must have a list of choices")
 
-        if option_type == "external" and dependencies:
+        if option_type == ConfigOptionType.EXTERNAL and dependencies:
             raise ValueError(f"External option {name} cannot have dependencies or evaluator")
 
         self.name = name
         self.option_type = option_type
         self.default = default
-        self.value = choices.index(default) if (option_type == "multiple_choice") else default
+        self.value = choices.index(default) if (option_type == ConfigOptionType.ENUM) else default
         self.external = external or False
         self.data = data
         self.description = description
@@ -368,13 +375,13 @@ class pyconfix:
 
     def _apply_config_to_options(self, options, saved_config):
         for option in options:
-            if option.option_type == 'group':
+            if option.option_type == ConfigOptionType.GROUP:
                 self._apply_config_to_options(option.options, saved_config)
             elif option.name in saved_config:
                 value = saved_config[option.name]
-                option.value = option.choices.index(value if value else option.default) if option.option_type == 'multiple_choice' else value
+                option.value = option.choices.index(value if value else option.default) if option.option_type == ConfigOptionType.ENUM else value
             else:
-                option.value = option.default if option.option_type != 'multiple_choice' else option.choices.index(option.default)
+                option.value = option.default if option.option_type != ConfigOptionType.ENUM else option.choices.index(option.default)
 
     def _is_option_available(self, option):
         def _is_option_available_impl(option, root):
@@ -383,7 +390,7 @@ class pyconfix:
                 if key_upper == root:
                     raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
                 for opt in options_list:
-                    if opt.option_type == "group":
+                    if opt.option_type == ConfigOptionType.GROUP:
                         found, value = getter_function_impl(key, opt.options)
                         if found:
                             return True, value
@@ -392,12 +399,12 @@ class pyconfix:
                         if not _is_option_available_impl(opt, root):
                             return True, False
                         default_value = opt.default
-                        if opt.option_type == "multiple_choice":
+                        if opt.option_type == ConfigOptionType.ENUM:
                             default_value = opt.choices.index(opt.default)
                             return True, opt.choices[opt.value] if opt.value is not None else default_value
                         return True, opt.value if opt.value is not None else default_value
                     # If an enum value being parsed as key instead of a key name
-                    elif opt.option_type == "multiple_choice":
+                    elif opt.option_type == ConfigOptionType.ENUM:
                         for choice in opt.choices:
                             if choice.upper() == key_upper:
                                 return True, key
@@ -422,15 +429,15 @@ class pyconfix:
         flat_options = []
         for option in options:
             if not self._is_option_available(option):
-                if option.option_type != 'group':
+                if option.option_type != ConfigOptionType.GROUP:
                     option.value = None
                 if not self.show_disabled:
                     continue
             else:
                 if option.value is None:
-                    option.value = option.choices.index(option.default) if option.option_type == 'multiple_choice' else option.default
+                    option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
             flat_options.append((option, depth))
-            if option.option_type == 'group' and option.expanded:
+            if option.option_type == ConfigOptionType.GROUP and option.expanded:
                 flat_options.extend(self._flatten_options(option.options, depth + 1))
         return flat_options
 
@@ -438,7 +445,7 @@ class pyconfix:
         flat_options = []
         for option in options:
             if self.show_disabled or self._is_option_available(option):
-                if option.option_type == 'group':
+                if option.option_type == ConfigOptionType.GROUP:
                     nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
                         option.expanded = True
@@ -497,21 +504,21 @@ class pyconfix:
         display_limit = max_y - 4 if not search_mode else max_y - 6
         for idx in range(start_index, min(start_index + display_limit, len(flat_options))):
             option, depth = flat_options[idx]
-            indicator = "[+]" if option.option_type == 'group' and not option.expanded else "[-]" if option.option_type == 'group' else ""
-            name = f"{indicator} {option.name}" if option.option_type == 'group' else option.name
+            indicator = "[+]" if option.option_type == ConfigOptionType.GROUP and not option.expanded else "[-]" if option.option_type == ConfigOptionType.GROUP else ""
+            name = f"{indicator} {option.name}" if option.option_type == ConfigOptionType.GROUP else option.name
             value = ""
             if option.external:
                 value = f"{option.value} [external]"
-            elif option.value is None and option.option_type != 'group':
+            elif option.value is None and option.option_type != ConfigOptionType.GROUP:
                 value = "[disabled]"
-            elif option.option_type == 'multiple_choice':
+            elif option.option_type == ConfigOptionType.ENUM:
                 value = option.choices[option.value][:10] + "..." if len(option.choices[option.value]) > 10 else option.choices[option.value]
-            elif option.option_type == 'bool':
+            elif option.option_type == ConfigOptionType.BOOL:
                 value = "True" if option.value else "False"
-            elif option.option_type in ['int', 'string']:
+            elif option.option_type in [ConfigOptionType.INT, ConfigOptionType.STRING]:
                 value = str(option.value)[:10] + "..." if len(str(option.value)) > 10 else str(option.value)
             display_text = f"{name}: {value}" if value != "" else name
-            if option.option_type == 'action':
+            if option.option_type == ConfigOptionType.ACTION:
                 display_text = f"({name})"
                 if option.value is None:
                     display_text += " [disabled]"
@@ -619,11 +626,11 @@ class pyconfix:
                 self.root = root
 
             def _execute_action(self, opt):
+                trace.append(opt.name)
                 if opt.requires and not opt.requires(self):
                     return None
                 if opt.name in self.cache:
                     return self.cache[opt.name]
-                trace.append(opt.name)
                 value = opt.default(self)
                 self.cache[opt.name] = value
                 return value
@@ -633,16 +640,16 @@ class pyconfix:
                     raise AttributeError(f"Cycle detected: '{name}'")
                 opt = self.config._get(name)
                 if not self.config._is_option_available(opt):
-                    if opt.option_type == "action":
+                    if opt.option_type == ConfigOptionType.ACTION:
                         return lambda: None
                     return None
                 if opt is None:
                     raise AttributeError(f"Invalid key: '{name}'")
-                if opt.option_type == "multiple_choice":
+                if opt.option_type == ConfigOptionType.ENUM:
                     return opt.choices[opt.value] if opt.value is not None else None
-                elif opt.option_type == "action":
+                elif opt.option_type == ConfigOptionType.ACTION:
                     return lambda: self._execute_action(opt)
-                elif opt.option_type == "group":
+                elif opt.option_type == ConfigOptionType.GROUP:
                     return opt.options
                 return opt.value
             
@@ -652,7 +659,7 @@ class pyconfix:
         if not flat_options:
             return
         selected_option, _ = flat_options[row]
-        if selected_option.option_type == 'group':
+        if selected_option.option_type == ConfigOptionType.GROUP:
             if not search_mode:
                 selected_option.expanded = not selected_option.expanded
                 return
@@ -661,13 +668,13 @@ class pyconfix:
             return
         if selected_option.external:
             return
-        if selected_option.option_type == 'bool':
+        if selected_option.option_type == ConfigOptionType.BOOL:
             selected_option.value = not selected_option.value
-        elif selected_option.option_type in ['int', 'string']:
+        elif selected_option.option_type in [ConfigOptionType.INT, ConfigOptionType.STRING]:
             self._edit_option(stdscr, selected_option)
-        elif selected_option.option_type == 'multiple_choice':
+        elif selected_option.option_type == ConfigOptionType.ENUM:
             self._edit_multiple_choice_option(stdscr, selected_option)
-        elif selected_option.option_type == 'action':
+        elif selected_option.option_type == ConfigOptionType.ACTION:
             curses.echo()
             curses.nocbreak()
             stdscr.keypad(False)
@@ -750,7 +757,7 @@ class pyconfix:
         # Only update if not aborted
         try:
             new_value = content.replace('\n', '').strip()
-            if option.option_type == 'int':
+            if option.option_type == ConfigOptionType.INT:
                 # Handle hex format
                 if new_value.lower().startswith('0x'):
                     option.value = int(new_value, 16)
@@ -760,7 +767,7 @@ class pyconfix:
                 # Handle decimal format
                 else:
                     option.value = int(new_value)
-            elif option.option_type == 'string':
+            elif option.option_type == ConfigOptionType.STRING:
                 option.value = new_value
         except ValueError:
             option.value = original_value
@@ -799,7 +806,7 @@ class pyconfix:
 
     def _collapse_current_group(self, flat_options, current_row, search_mode):
         selected_option, _ = flat_options[current_row]
-        if selected_option.option_type == 'group':
+        if selected_option.option_type == ConfigOptionType.GROUP:
             selected_option.expanded = not selected_option.expanded
             if search_mode:
                 for option, _ in flat_options:
@@ -807,7 +814,7 @@ class pyconfix:
                         option.expanded = selected_option.expanded
             return current_row
         for idx, (option, _) in enumerate(flat_options):
-            if option.option_type == 'group' and option.expanded and selected_option in option.options:
+            if option.option_type == ConfigOptionType.GROUP and option.expanded and selected_option in option.options:
                 option.expanded = False
                 return idx
         return current_row
@@ -836,17 +843,17 @@ class pyconfix:
     def _dump(self, options):
         config_data = {}
         for option in options:
-            if option.option_type == 'action':
+            if option.option_type == ConfigOptionType.ACTION:
                 continue
-            if option.option_type == 'group':
+            if option.option_type == ConfigOptionType.GROUP:
                 nested_data = self._dump(option.options)
                 if not self._is_option_available(option):
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
-                default_value = option.default if option.option_type != 'multiple_choice' else option.choices.index(option.default)
+                default_value = option.default if option.option_type != ConfigOptionType.ENUM else option.choices.index(option.default)
                 value_to_save = default_value if option.value is None else (
-                    option.choices[option.value] if option.option_type == 'multiple_choice'
+                    option.choices[option.value] if option.option_type == ConfigOptionType.ENUM
                     else option.value)
                 config_data[option.name] = None if not self._is_option_available(option) else value_to_save
         return config_data
@@ -856,14 +863,14 @@ class pyconfix:
         if opt is None:
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
-            if opt.option_type == "action":
-                return lambda : None
+            if opt.option_type == ConfigOptionType.ACTION:
+                return lambda : (None, [])
             return None
-        if opt.option_type == "multiple_choice":
+        if opt.option_type == ConfigOptionType.ENUM:
             return opt.choices[opt.value] if opt.value is not None else None
-        elif opt.option_type == "action":
+        elif opt.option_type == ConfigOptionType.ACTION:
             return lambda : self._execute_action(opt)
-        elif opt.option_type == "group":
+        elif opt.option_type == ConfigOptionType.GROUP:
             return opt.options
         return opt.value
     
@@ -871,7 +878,7 @@ class pyconfix:
         def get_impl(key, options_list=self.options):
             key_upper = key.upper()
             for opt in options_list:
-                if opt.option_type == "group":
+                if opt.option_type == ConfigOptionType.GROUP:
                     found, value = get_impl(key, opt.options)
                     if found:
                         return True, value
@@ -883,6 +890,30 @@ class pyconfix:
         if not found:
             return None
         return value
+    
+    def _create_action_decorator(self, group=None):
+        class GroupProxy:
+            def __init__(self, group):
+                self.group = group
+
+            def action_option(self, name=None, dependencies="", requires=""):
+                def decorator(func):
+                    option_name = name or func.__name__
+                    new_option = ConfigOption(
+                        name=option_name,
+                        option_type=ConfigOptionType.ACTION,
+                        default=func,
+                        dependencies=dependencies,
+                        requires=requires,
+                        description=func.__doc__ or ""
+                    )
+                    self.group.options.append(new_option)
+                    return func
+                return decorator
+        if group != None:
+            return GroupProxy(group)
+        else:
+            return GroupProxy(self)
     
     def load_schem(self, schem_files):
         """
@@ -930,7 +961,7 @@ class pyconfix:
                     opt.postfix_dependencies = shunting_yard(tokenize(opt.dependencies))
                 if group_requires:
                     opt.requires = combine(group_requires, opt.requires)
-                if opt.option_type == 'group':
+                if opt.option_type == ConfigOptionType.GROUP:
                     cascade_group(opt.options, opt.dependencies, opt.requires)
 
         cascade_group(self.options)
@@ -951,9 +982,9 @@ class pyconfix:
                 expanded=self.expanded,
                 options=[]
             )
-            if option.option_type == 'group' and 'options' in option_data:
+            if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
                 option.options = self.parse_options(option_data['options'])
-            elif option.option_type == 'multiple_choice':
+            elif option.option_type == ConfigOptionType.ENUM:
                 option.value = option.choices.index(option.default)
             parsed_options.append(option)
         return parsed_options
@@ -1029,28 +1060,40 @@ class pyconfix:
         self.apply_config(config_file=config_file, overlay=overlay)
         if graphical:
             self.run_main_loop()
-        self._write_config(output_diff=output_diff)
-    
+
     def action_option(self, name=None, dependencies="", requires=""):
         """
-        Decorator to register a function as an action option.
-        When applied, the function is added to self.options as an action.
-        Usage:
-            @config.action_option(requires=lambda x: x.build())
-            def my_action(config):
-                '''Action description'''
-                ...
+        Create an action option.
+        :param name: Optional action name, defaults to function name.
+        :param dependencies: Optional dependency expression or function.
+        :param requires: Optional requires function.
+        :return: Decorator that registers the action.
         """
-        def decorator(func):
-            option_name = name or func.__name__
-            new_option = ConfigOption(
-                name=option_name,
-                option_type="action",
-                default=func,
-                dependencies=dependencies,
-                requires=requires,
-                description=func.__doc__ or ""
-            )
-            self.options.append(new_option)
-            return func
-        return decorator
+
+        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
+
+    def group_option(self, name, dependencies=""):
+        """
+        Create an option group.
+        :param name: Group name.
+        :param dependencies: Optional dependency expression or function.
+        :return: GroupProxy object for adding action options.
+        Usage:
+            group = config.group_option("my_group", dependencies="some_option")
+            
+            @group.action_option()
+            def my_action(config):
+            '''Action description'''
+            ...
+        """
+
+        self.options.append(ConfigOption(
+            name=name,
+            option_type=ConfigOptionType.GROUP,
+            dependencies=dependencies,
+            options=[]
+        ))
+
+        # Get reference to the newly added option
+        group_option = self.options[-1]
+        return self._create_action_decorator(group=group_option)

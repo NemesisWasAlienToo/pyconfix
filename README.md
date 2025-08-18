@@ -12,7 +12,7 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 
 ## Features
 
-* Hierarchical options – `bool`, `int`, `string`, `multiple_choice`, recursive groups.
+* Hierarchical options – `bool`, `int`, `string`, `enum`, recursive groups.
 * Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!` (keyword forms `and`, `or`, `xor`), comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
 * Composable schemas – `"include"`: split large configs.
 * Instant search (`/`).
@@ -178,7 +178,7 @@ cfg.options.extend([
     { "name": "ENABLE_FEATURE_A", "type": "bool", "default": true },
     {
       "name": "LogLevel",
-      "type": "multiple_choice",
+      "type": "enum",
       "default": "INFO",
       "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
       "dependencies": "ENABLE_FEATURE_A"
@@ -199,7 +199,7 @@ cfg.options.extend([
 | `bool`            | `true` / `false`         |
 | `int`             | any integer              |
 | `string`          | unicode string           |
-| `multiple_choice` | one value from `choices` |
+| `enum` | one value from `choices` |
 | `group`           | nests other options      |
 | `action`          | executable task option   |
 

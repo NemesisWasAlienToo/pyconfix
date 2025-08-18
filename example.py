@@ -14,7 +14,61 @@ def custom_save(json_data, _):
             else:
                 f.write(f"CONFIG_{key}={value if value != True else 'y'}\n")
 
-def main():
+### This function creates the config object making it accessible for use
+### by external tools like conan and CMake.
+def create_config():
+    config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
+
+    ### Actions can be added using a decorator
+    @config.action_option(
+        requires=lambda x: x.LOG_LEVEL, 
+        dependencies="ENABLE_FEATURE_A",
+    )
+    def build(x):
+        print("Building...")
+        time.sleep(2)
+        return True
+    
+    # First define a group
+    deployment_group = config.group_option("deployment", dependencies="ENABLE_FEATURE_A")
+
+    # Then use the group's action_option decorator
+    @deployment_group.action_option(
+        requires=lambda x: x.build(),
+        dependencies="ENABLE_FEATURE_A"
+    )
+    def deploy(x):
+        print("Deploying...")
+        time.sleep(2)
+        return True
+    
+    @config.action_option(
+        requires=lambda x: x.deploy(),
+    )
+    def test(x):
+        print("Testing...")
+        time.sleep(2)
+        return True
+    
+    ### Config options can also be added by calling extend on the config's options
+    config.options.extend([
+        ConfigOption(
+            name='OS',
+            option_type='string',
+            default="UNIX",
+            external=True
+        ),
+        ConfigOption(
+            name='PYTHON_EVALUATED',
+            option_type='string',
+            default="UNIX",
+            dependencies=lambda x: x.ENABLE_FEATURE_A
+        ),
+    ])
+
+    return config
+
+if __name__ == "__main__":
     #################################################
     ################ Parse arguments ################
     #################################################
@@ -66,55 +120,14 @@ def main():
         else:
             options_dict[key] = value
 
+    #################################################
+    ############ Create prconfix instance ###########
+    #################################################
+    config = create_config()
     
     #################################################
     ############## Run prconfix examlpe #############
     #################################################
-    config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
-
-    ### Actions can be added using a decorator
-    @config.action_option(
-        requires=lambda x: x.LOG_LEVEL, 
-        dependencies="ENABLE_FEATURE_A",
-    )
-    def build(x):
-        print("Building...")
-        time.sleep(2)
-        return True
-    
-    @config.action_option(
-        requires=lambda x: x.build(),
-        dependencies="ENABLE_FEATURE_A",
-    )
-    def deploy(x):
-        print("Deploying...")
-        time.sleep(2)
-        return True
-    
-    @config.action_option(
-        requires=lambda x: x.deploy(),
-    )
-    def test(x):
-        print("Testing...")
-        time.sleep(2)
-        return True
-    
-    ### Config options can also be added by calling extend on the config's options
-    config.options.extend([
-        ConfigOption(
-            name='OS',
-            option_type='string',
-            default="UNIX",
-            external=True
-        ),
-        ConfigOption(
-                name='PYTHON_EVALUATED',
-                option_type='string',
-                default="UNIX",
-                dependencies=lambda x: x.ENABLE_FEATURE_A
-        ),
-    ])
-    
     ### Config can load files, overlays and run in either TUI or CLI mode
     config.run(config_file=args.load, overlay=options_dict, graphical=not args.cli, output_diff=args.diff)
 
@@ -124,10 +137,7 @@ def main():
     if args.cli:
         if args.run:
             value, trace = config.get(args.run)()
-            if args.trace:
-                print(f"Trace for {args.run}: {trace}")
+            print(f"Value: {value}")
+            print(f"Trace: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
-
-if __name__ == "__main__":
-    main()

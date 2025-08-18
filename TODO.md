@@ -16,7 +16,7 @@ With this json the dependency incompatibility will cause problem:
         },
         {
             "name": "LogLevel",
-            "type": "multiple_choice",
+            "type": "enum",
             "default": "DEBUG",
             "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
             "dependencies": [

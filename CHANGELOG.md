@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [Unreleased]
+### Added
+- Empty
+
+### Changed
+- Empty
+
+### Fixed
+- Empty
+
+### Deprecated
+- Empty
+
+### Removed
+- Empty
+
+### Security
+- Empty
+
+---
+
+## [0.8.0]
+### Added
+- Stack trace for action execution
+- Added capability to create groups and actions in it using decorators
+- Added create_config fucntoin architecure example in the example for integration with other tools like conan, CMake, etc
+
+### Changed
+- Changed the name of the multiple option type to enum
+- Change the option type implementation from string to StrEnum for safety
+
+### Fixed
+- Fixed the checked stack for the case the action is disabled
+
+### Deprecated
+- multiple_option type
+
+### Removed
+- --no-file-write flag in example.py removed since it was superficial and could be reproduced with other functions
+
+---
+
 ## [0.7.0] - 2025-06-14
 ### Added
 - action_option decorator added for easy function addition

@@ -543,7 +543,7 @@ class pyconfix:
         while True:
             stdscr.clear()
             stdscr.border(0)
-            stdscr.addstr(0, 2, f" {self.config_name} ")
+            stdscr.addstr(0, 2, f" {self.config_name or "Unnamed"} ")
             max_y, max_x = stdscr.getmaxyx()
             if not search_mode and max_y > 2:
                 info = f"'{curses.keyname(self.quite_key).decode()}': Exit, '{curses.keyname(self.save_key).decode()}': Save, '{curses.keyname(self.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(self.help_key).decode()}': Help"
@@ -896,6 +896,9 @@ class pyconfix:
             def __init__(self, group):
                 self.group = group
 
+            def get(self):
+                return self.group
+
             def action_option(self, name=None, dependencies="", requires=""):
                 def decorator(func):
                     option_name = name or func.__name__
@@ -918,7 +921,7 @@ class pyconfix:
     def load_schem(self, schem_files):
         """
         Load configuration schema from JSON files.
-        :param schem_files: List of JSON schema files.
+        :param schem_files: List of JSON schem files.
         """
         def parse_file(filepath):
             with open(filepath, 'r') as f:
@@ -932,7 +935,7 @@ class pyconfix:
                     include_path = os.path.join(base_path, include_file)
                     if not os.path.exists(include_path):
                         print(f"File {filepath} includes a non-existing file: {include_path}")
-                        exit()
+                        exit(1)
                     parse_file(include_path)
 
         # Parse each config file in the list
@@ -989,20 +992,21 @@ class pyconfix:
             parsed_options.append(option)
         return parsed_options
 
-    def apply_config(self, config_file=None, overlay=None):
+    def apply_config(self, config_files=[], overlay=None):
         """
         Apply configuration from a file or overlay.
         :param config_file: Optional path to a JSON config file.
         :param overlay: Optional dictionary to override settings.
         """
         saved_config = {}
-        if config_file:
-            if not os.path.exists(config_file):
-                print(f"Invalid config file: {config_file}")
-                exit()
-            with open(config_file, 'r') as f:
-                saved_config = json.load(f)
-                print(f"File loaded: {config_file}")
+        if len(config_files):
+            for config_file in config_files:
+                if not os.path.exists(config_file):
+                    print(f"Invalid config file: {config_file}")
+                    exit(1)
+                with open(config_file, 'r') as f:
+                    saved_config.update(json.load(f))
+                    print(f"File loaded: {config_file}")
         elif os.path.exists(self.output_file):
             with open(self.output_file, 'r') as f:
                 saved_config = json.load(f)
@@ -1045,7 +1049,7 @@ class pyconfix:
         """
         curses.wrapper(self._menu_loop)
 
-    def run(self, config_file=None, overlay=None, graphical=True, output_diff=False):
+    def run(self, config_files=[], overlay=None, graphical=True, output_diff=False):
         """
         Run the configuration process.
         :param config_file: Optional config file path.
@@ -1057,7 +1061,7 @@ class pyconfix:
         """
         self.graphical = graphical
         self.load_schem(self.schem_files)
-        self.apply_config(config_file=config_file, overlay=overlay)
+        self.apply_config(config_files=config_files, overlay=overlay)
         if graphical:
             self.run_main_loop()
 

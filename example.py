@@ -1,5 +1,4 @@
-import time
-import argparse
+import time, argparse, sys
 from pyconfix import pyconfix, ConfigOption, ConfigOptionType
 
 ### This function saves the current configurations in a defconfig-like format.
@@ -30,8 +29,9 @@ def create_config():
         ConfigOption(
             name='PYTHON_EVALUATED',
             option_type=ConfigOptionType.STRING,
-            default="UNIX",
-            dependencies=lambda x: x.ENABLE_FEATURE_A
+            default=".".join(map(str, sys.version_info[:3])),
+            dependencies=lambda x: x.ENABLE_FEATURE_A,
+            external=True
         ),
     ])
 

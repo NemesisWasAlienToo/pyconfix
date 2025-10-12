@@ -1,5 +1,12 @@
 {
     "name": "Main Config",
+    "types": [
+        {
+            "name": "tri-state",
+            "type": "enum",
+            "choices": ["INTEGRATED", "MODULE", "DISABLED"]
+        }
+    ],
     "options": [
         {
             "name": "ENABLE_FEATURE_A",
@@ -12,6 +19,11 @@
             "name": "DISABLED_BY_DEFAULT",
             "type": "bool",
             "default": false
+        },
+        {
+            "name": "LINUX_MODULE",
+            "type": "tri-state",
+            "default": "DISABLED"
         },
         {
             "name": "LOG_LEVEL",

@@ -237,6 +237,31 @@ class ConfigOptionType(StrEnum):
     GROUP = "group"
     EXTERNAL = "external"
 
+class ConfigCustomType:
+    def __init__(self, name, option_type:ConfigOptionType, choices=None):
+        if option_type not in ConfigOptionType:
+            raise ValueError(f"{name} inherits from an unknown type: {option_type}")
+        
+        if any(c.isspace() for c in name):
+            raise ValueError(f"Type name cannot contain white space: {name}")
+        
+        if option_type == ConfigOptionType.ENUM:
+            if len(choices or []) < 1:
+                raise ValueError(f"Multiple choice option {name} must have at least one choice")
+            if any(' ' in choice for choice in (choices or [])):
+                raise ValueError(f"Choice names cannot contain white space: in option {name}")
+
+        self.name = name
+        self.option_type = option_type
+        self.choices = choices or []
+
+    def to_dict(self):
+        return {
+            'name': self.name,
+            'type': self.option_type,
+            'choices': self.choices,
+        }
+
 class ConfigOption:
     def __init__(self, name, option_type:ConfigOptionType, default=None, external=None, data=None, description="",
                  dependencies="", options=None, choices=None, expanded=False, requires=None):
@@ -311,6 +336,7 @@ class pyconfix:
         self.show_disabled = show_disabled
         self.expanded = expanded
         self.options = []
+        self.types = []
         self.config_name = ""
         self.graphical = False
 
@@ -927,7 +953,8 @@ class pyconfix:
             with open(filepath, 'r') as f:
                 config_data = json.load(f)
                 self.config_name = config_data.get('name', 'Configuration')
-                self.options += self.parse_options(config_data['options'])
+                self.types += self.parse_types(config_data.get('types', {}))
+                self.options += self.parse_options(config_data.get('options', {}))
                 
                 # Handle includes relative to current file
                 base_path = os.path.dirname(os.path.abspath(filepath))
@@ -969,22 +996,60 @@ class pyconfix:
 
         cascade_group(self.options)
 
+    def parse_types(self, types_data):
+        parsed_types = []
+        for type_data in types_data:
+            option = ConfigCustomType(
+                name=type_data['name'],
+                option_type=type_data['type'],
+                choices=type_data.get('choices', []),
+            )
+            if option.option_type == ConfigOptionType.ENUM:
+                pass
+            parsed_types.append(option)
+        return parsed_types
+
     # @TODO: Fix callable group dependencies
     def parse_options(self, options_data):
         parsed_options = []
         for option_data in options_data:
-            option = ConfigOption(
-                name=option_data['name'],
-                option_type=option_data['type'],
-                default=option_data.get('default'),
-                description=option_data.get('description'),
-                data=option_data.get('data'),
-                dependencies=option_data.get('dependencies', ""),
-                requires=option_data.get('requires', ""),
-                choices=option_data.get('choices', []),
-                expanded=self.expanded,
-                options=[]
-            )
+            option: ConfigOption
+            option_type_name = option_data['type']
+            name = option_data['name']
+            if option_type_name in ConfigOptionType:
+                option = ConfigOption(
+                    name=name,
+                    option_type=option_type_name,
+                    default=option_data.get('default'),
+                    description=option_data.get('description'),
+                    data=option_data.get('data'),
+                    dependencies=option_data.get('dependencies', ""),
+                    requires=option_data.get('requires', ""),
+                    choices=option_data.get('choices', []),
+                    expanded=self.expanded,
+                    options=[]
+                )
+            else:
+                option_type: ConfigCustomType
+                for t in self.types:
+                    if t.name == option_type_name:
+                        option_type = t
+                        break
+                else:
+                    print(f"Type {option_type_name} for option '{name}' is not a valid type")
+                    exit(1)
+                option = ConfigOption(
+                    name=name,
+                    option_type=option_type.option_type,
+                    default=option_data.get('default'),
+                    description=option_data.get('description'),
+                    data=option_data.get('data'),
+                    dependencies=option_data.get('dependencies', ""),
+                    requires=option_data.get('requires', ""),
+                    choices=option_type.choices,
+                    expanded=self.expanded,
+                    options=[]
+                )
             if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
                 option.options = self.parse_options(option_data['options'])
             elif option.option_type == ConfigOptionType.ENUM:

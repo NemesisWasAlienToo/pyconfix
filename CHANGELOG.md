@@ -8,7 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- Empty
+- Added support for multiple config files
+- Added get function for Group Proxy
+- Added default title for unnamed config
+- Added type support
 
 ### Changed
 - Empty
@@ -32,9 +35,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Stack trace for action execution
 - Added capability to create groups and actions in it using decorators
 - Added create_config fucntoin architecure example in the example for integration with other tools like conan, CMake, etc
-- Added support for multiple config files
-- Added get function for Group Proxy
-- Added default title for unnamed config
 
 ### Changed
 - Changed the name of the multiple option type to enum

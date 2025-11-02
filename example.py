@@ -1,5 +1,6 @@
 import time, argparse, sys
 from pyconfix import pyconfix, ConfigOption, ConfigOptionType
+import platform
 
 ### This function saves the current configurations in a defconfig-like format.
 ### Custom save functions can be used to export the settings in any format.
@@ -23,7 +24,7 @@ def create_config():
         ConfigOption(
             name='OS',
             option_type=ConfigOptionType.STRING,
-            default="UNIX",
+            default=platform.system(),
             external=True
         ),
         ConfigOption(

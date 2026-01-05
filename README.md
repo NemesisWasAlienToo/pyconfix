@@ -219,6 +219,29 @@ cfg.options.extend([
 | `group`           | nests other options      |
 | `action`          | executable task option   |
 
+### Aliases
+
+You can register alias types (currently **ENUM** only) and reuse them in both JSON schema files and the Python API. This is useful for reusing common choice sets like tri-state options.
+
+- JSON usage: in your schema set `"type"` to the alias name:
+```json
+{ "name": "LINUX_MODULE", "type": "tri-state", "default": "DISABLED" }
+```
+
+- Python usage: register the alias before loading the schema (or before `run()`), then create options from it:
+```python
+cfg.register_alias(
+    name='tri-state', 
+    option_type=ConfigOptionType.ENUM,
+    choices=['INTEGRATED', 'MODULE', 'DISABLED']
+)
+cfg.options.append(
+    cfg.option_from_alias('tri-state', name='NEW_MODULE_TRI_STATE_FROM_PYTHON', default='DISABLED')
+)
+```
+
+> **Note:** Register aliases before calling `cfg.run()` (which calls `load_schem()`), so schema files that reference the alias can be parsed successfully. Only enum aliases are supported for now.
+
 ### Dependency syntax – cheatsheet
 
 ```text

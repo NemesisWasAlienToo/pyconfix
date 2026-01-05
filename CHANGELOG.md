@@ -11,7 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added support for multiple config files
 - Added get function for Group Proxy
 - Added default title for unnamed config
-- Added type support
+- Added default value for multiple choice options
+- Added aliase support
 
 ### Changed
 - Empty

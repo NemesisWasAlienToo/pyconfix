@@ -38,7 +38,7 @@ Create a tiny launcher script first:
 # menu.py
 import pyconfix
 
-pyconfix.pyconfix(schem_file=["schem.json"]).run()
+pyconfix.pyconfix(schem_files=["schem.json"]).run()
 ```
 
 Then run it:
@@ -49,6 +49,22 @@ python menu.py
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
 
+### Custom save function
+
+Want to emit something other than the default JSON? Pass a `save_func` callable when you create the instance. It receives the flattened config dict and the option tree, so you can write out any format you need:
+
+```python
+def write_header(cfg, _):
+    with open("config.h", "w") as f:
+        for key, value in cfg.items():
+            f.write(f"#define {key} {value}\n")
+
+pyconfix(
+    schem_files=["schem.json"],
+    save_func=write_header,
+).run()
+```
+
 ## Headless / CI mode
 
 Run the schema parser non‑interactively to dump a JSON config – handy for scripts and pipelines:
@@ -57,7 +73,7 @@ Run the schema parser non‑interactively to dump a JSON config – handy for sc
 python - <<'PY'
 import pyconfix, json
 cfg = pyconfix.pyconfix(
-    schem_file=["schem.json"],
+    schem_files=["schem.json"],
     output_file="cfg.json"
 )
 cfg.run(graphical=False, config_file="prev.json")
@@ -72,7 +88,7 @@ If you’d rather drive everything from code, import the class:
 from pyconfix import pyconfix
 
 cfg = pyconfix(
-    schem_file=["main.json", "extras.json"],
+    schem_files=["main.json", "extras.json"],
     config_file="prev.json",      # load an existing config (optional)
     output_file="final.json",     # where to write when you press "s"
     expanded=True,                 # expand all groups initially
@@ -87,7 +103,7 @@ Constructor signature for reference:
 
 ```python
 pyconfix(
-    schem_file: list[str],
+    schem_files: list[str],
     config_file: str | None = None,
     output_file: str = "output_config.json",
     save_func: Callable[[dict, list], None] | None = None,

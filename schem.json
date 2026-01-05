@@ -1,12 +1,5 @@
 {
     "name": "Main Config",
-    "types": [
-        {
-            "name": "tri-state",
-            "type": "enum",
-            "choices": ["INTEGRATED", "MODULE", "DISABLED"]
-        }
-    ],
     "options": [
         {
             "name": "ENABLE_FEATURE_A",

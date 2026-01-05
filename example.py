@@ -19,8 +19,17 @@ def custom_save(json_data, _):
 def create_config():
     config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
 
-    ### Config options can also be added by calling extend on the config's options
-    config.options.extend([
+    ### Aliases can be registered with a dedicated helper
+    config.register_alias(
+        name='tri-state',
+        option_type=ConfigOptionType.ENUM,
+        choices=["INTEGRATED", "MODULE", "DISABLED"]
+    )
+
+    ### Config options can be added using helpers or plain ConfigOption objects
+    config.add_options(
+        config.option_from_alias('tri-state', name='NEW_MODULE_TRI_STATE_FROM_PYTHON'),
+        config.option_from_alias('string', name='STRING_FROM_ALIAS', default='Default string value'),
         ConfigOption(
             name='OS',
             option_type=ConfigOptionType.STRING,
@@ -34,7 +43,7 @@ def create_config():
             dependencies=lambda x: x.ENABLE_FEATURE_A,
             external=True
         ),
-    ])
+    )
 
     ### Actions can also be added using a decorator for ease
     @config.action_option(

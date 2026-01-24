@@ -74,7 +74,7 @@ python menu.py
 ```
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
-The minimal example could be found in the __minimal_example.py__ script. To see a frther customized version you can check out __example.py__ script which uses the __schem.json__ file which uses more advanced features like aliases.
+The minimal example could be found in the __minimal_example.py__ script. To see a frther customized version you can check out __example.py__ script which uses the __schem.json__ file which uses more advanced features like aliases and tasks.
 
 ### Custom save function
 

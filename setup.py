@@ -2,14 +2,14 @@ from setuptools import setup
 
 setup(
     name="pyconfix",
-    version="0.10.4",
+    version="0.10.6",
     description="A simple feature managment tool library",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="Nemesis",
     author_email="nemesiswasalientoo@proton.me",
     url="https://github.com/NemesisWasAlienToo/pyconfix",
-    py_modules=["pyconfix", "main"],
+    packages=["pyconfix"],
     python_requires=">=3.11",
     license="MIT",
     install_requires=[
@@ -17,7 +17,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'pyconfix = main:main',
+            'pyconfix = pyconfix.__main__:main',
         ],
     },
 )

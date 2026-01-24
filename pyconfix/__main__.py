@@ -1,7 +1,7 @@
 import argparse
-from pyconfix import pyconfix
+from .core import pyconfix
 
-VERSION = "0.10.3"
+VERSION = "0.10.6"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")

@@ -13,12 +13,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added default title for unnamed config
 - Added default value for multiple choice options
 - Added aliase support
+- Added a main script file
+- Added flag for specifying config files to the command script
 
 ### Changed
-- Empty
+- Unified the diff and output path
+- Unified the save function by adding a diff flag and using the same function for both paths
+- Improved the way arguments are passed to the object in the default command script
+- Removed `graphical` from internal variables
+- Unified the function for loading config files and the cache file
 
 ### Fixed
-- Empty
+- Added error handling for loading of config files
 
 ### Deprecated
 - Empty

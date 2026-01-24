@@ -103,7 +103,7 @@ cfg = pyconfix.pyconfix(
     schem_files=["schem.json"],
     output_file="cfg.json"
 )
-cfg.run(graphical=False, config_file="prev.json")
+cfg.run(graphical=False, config_files=["prev.json"])
 PY
 ```
 
@@ -116,7 +116,7 @@ from pyconfix import pyconfix
 
 cfg = pyconfix(
     schem_files=["main.json", "extras.json"],
-    config_file="prev.json",      # load an existing config (optional)
+    config_files=["prev.json"],      # load an existing config (optional)
     output_file="final.json",     # where to write when you press "s"
     expanded=True,                 # expand all groups initially
     show_disabled=True             # show options that currently fail deps

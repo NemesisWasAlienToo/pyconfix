@@ -4,7 +4,7 @@ import platform
 
 ### This function saves the current configurations in a defconfig-like format.
 ### Custom save functions can be used to export the settings in any format.
-def custom_save(json_data, _):
+def custom_save(json_data, config, is_diff):
     with open("output_defconfig", 'w') as f:
         for key, value in json_data.items():
             if value is None or (isinstance(value, bool) and value == False):
@@ -113,11 +113,6 @@ def parse_args():
         help="Run in CLI mode instead of graphical mode"
     )
     parser.add_argument(
-        "--diff",
-        action="store_true",
-        help="Save the setting as diff instead of a full config"
-    )
-    parser.add_argument(
         "--expanded",
         action="store_true",
         help="Default state of groups"
@@ -167,7 +162,7 @@ def main():
     ############## Run pyconfix examlpe #############
     #################################################
     ### Config can load files, overlays and run in either TUI or CLI mode
-    config.run(config_files=args.load, overlay=args.option, graphical=not args.cli, output_diff=args.diff)
+    config.run(config_files=args.load, overlay=args.option, graphical=not args.cli)
 
     ### Option values can be accessed as attributes.
     ### Actions can then be run by calling them as methods.

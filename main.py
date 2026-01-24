@@ -21,14 +21,14 @@ def parse_args():
         help="Prints the value of an option"
     )
     parser.add_argument(
-        "-c", "--cli",
+        "--cli",
         action="store_true",
         help="Run in CLI mode instead of graphical mode"
     )
     parser.add_argument(
-        "--diff",
+        "-c", "--cache",
         action="store_true",
-        help="Save the setting as diff instead of a full config"
+        help="Specifies the output file where the current configuration will be saved"
     )
     parser.add_argument(
         "--dump",
@@ -80,6 +80,8 @@ def main():
         constructorArgs['expanded'] = args.expanded
     if args.show_disabled:
         constructorArgs['show_disabled'] = args.show_disabled
+    if args.cache:
+        constructorArgs['output_file'] = args.cache
     config = pyconfix(**constructorArgs)
 
     runArgs = {}
@@ -89,8 +91,6 @@ def main():
         runArgs['overlay'] = args.option
     if args.cli or args.print or args.dump:
         runArgs['graphical'] = False
-    if args.diff:
-        runArgs['output_diff'] = args.diff
     config.run(**runArgs)
 
     if args.print and args.dump:

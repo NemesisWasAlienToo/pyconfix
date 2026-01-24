@@ -327,19 +327,16 @@ class ConfigOption:
         return ConfigOption(**params)
 
 class pyconfix:
-    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json", output_diff_config="output_diff_config.json",
-                 save_func=None, save_diff_func=None, expanded=False, show_disabled=False):
+    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json",
+                 save_func=None, expanded=False, show_disabled=False):
         self.schem_files = schem_files
         self.output_file = output_file
-        self.output_diff_config = output_diff_config
         self.save_func = save_func
-        self.save_diff_func = save_diff_func
         self.show_disabled = show_disabled
         self.expanded = expanded
         self.options = []
         self.aliases = {}
         self.config_name = ""
-        self.graphical = False
 
         self.save_key = ord('s')
         self.save_diff_key = ord('d')
@@ -898,17 +895,11 @@ class pyconfix:
         return current_row
 
     def _write_config(self, output_diff=True):
-        config_data = self.dump()
+        config_data = self.diff() if output_diff else self.dump()
         with open(self.output_file, 'w') as f:
             json.dump(config_data, f, indent=4)
         if self.save_func:
-            self.save_func(config_data, self.options)
-        if output_diff:
-            config_data = self.diff()
-            with open(self.output_diff_config, 'w') as f:
-                json.dump(config_data, f, indent=4)
-            if self.save_diff_func:
-                self.save_diff_func(config_data, self.options)
+            self.save_func(config_data, self, output_diff)
 
     def _save_config(self, stdscr, output_diff):
         self._write_config(output_diff)
@@ -1091,20 +1082,18 @@ class pyconfix:
     def apply_config(self, config_files=[], overlay=None):
         """
         Apply configuration from a file or overlay.
-        :param config_file: Optional path to a JSON config file.
         :param overlay: Optional dictionary to override settings.
         """
         saved_config = {}
-        if len(config_files):
-            for config_file in config_files:
-                if not os.path.exists(config_file):
-                    raise ValueError(f"Invalid config file: {config_file}")
-                with open(config_file, 'r') as f:
+        for config_file in config_files:
+            if not os.path.exists(config_file):
+                raise ValueError(f"Invalid config file: {config_file}")
+            with open(config_file, 'r') as f:
+                try:
                     saved_config.update(json.load(f))
-                    print(f"File loaded: {config_file}")
-        elif os.path.exists(self.output_file):
-            with open(self.output_file, 'r') as f:
-                saved_config = json.load(f)
+                except json.JSONDecodeError:
+                    print(f"Invalid json file: {config_file}")
+                    exit(1)
 
         if overlay:
             saved_config.update(overlay)
@@ -1144,19 +1133,15 @@ class pyconfix:
         """
         curses.wrapper(self._menu_loop)
 
-    def run(self, config_files=[], overlay=None, graphical=True, output_diff=False):
+    def run(self, config_files=[], overlay=None, graphical=True):
         """
         Run the configuration process.
         :param config_file: Optional config file path.
         :param overlay: Optional dict to override settings.
         :param graphical: Use interactive mode if True.
-        :param output_diff: Save config diff in CLI mode if True.
-        :param write_to_file: Write output to file if True, else return a dict.
-        :return: dict if write_to_file is False.
         """
-        self.graphical = graphical
         self.load_schem(self.schem_files)
-        self.apply_config(config_files=config_files, overlay=overlay)
+        self.apply_config(config_files=config_files if len(config_files) > 0 else [self.output_file], overlay=overlay)
         if graphical:
             self.run_main_loop()
 
@@ -1168,7 +1153,6 @@ class pyconfix:
         :param requires: Optional requires function.
         :return: Decorator that registers the action.
         """
-
         return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
 
     def group_option(self, name, dependencies=""):
@@ -1185,7 +1169,6 @@ class pyconfix:
             '''Action description'''
             ...
         """
-
         self.options.append(ConfigOption(
             name=name,
             option_type=ConfigOptionType.GROUP,

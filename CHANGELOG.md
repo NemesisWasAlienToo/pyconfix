@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [0.10.3]
+## [0.10.4]
 ### Added
 - Added support for multiple config files
 - Added get function for Group Proxy
@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added aliase support
 - Added a main script file
 - Added flag for specifying config files to the command script
+- Added version flag to the command script
 
 ### Changed
 - Unified the diff and output path

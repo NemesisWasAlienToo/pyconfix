@@ -1,6 +1,8 @@
 import argparse
 from pyconfix import pyconfix
 
+VERSION = "0.10.3"
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
     parser.add_argument(
@@ -39,6 +41,12 @@ def parse_args():
         "--expanded",
         action="store_true",
         help="Default state of groups"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"pyconfix {VERSION}",
+        help="Show program's version number and exit"
     )
     parser.add_argument(
         "--show-disabled",

@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="pyconfix",
-    version="0.10.3",
+    version="0.10.4",
     description="A simple feature managment tool library",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -13,7 +13,7 @@ setup(
     python_requires=">=3.11",
     license="MIT",
     install_requires=[
-        "windows-curses;platform_system=='Windows'"
+        "windows-curses ; platform_system == 'Windows'"
     ],
     entry_points={
         'console_scripts': [

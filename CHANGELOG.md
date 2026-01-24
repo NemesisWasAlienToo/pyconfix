@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [0.10.1]
+## [0.10.3]
 ### Added
 - Added support for multiple config files
 - Added get function for Group Proxy
@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Improved the way arguments are passed to the object in the default command script
 - Removed `graphical` from internal variables
 - Unified the function for loading config files and the cache file
+- Changed minimal python version for this package
 
 ### Fixed
 - Added error handling for loading of config files

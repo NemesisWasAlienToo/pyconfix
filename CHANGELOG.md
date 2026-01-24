@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- Empty
+
+### Changed
+- Empty
+
+### Fixed
+- Empty
+
+### Deprecated
+- Empty
+
+### Removed
+- Empty
+
+### Security
+- Empty
+
+---
+
+## [0.10.1]
+### Added
 - Added support for multiple config files
 - Added get function for Group Proxy
 - Added default title for unnamed config
@@ -25,15 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 - Added error handling for loading of config files
-
-### Deprecated
-- Empty
-
-### Removed
-- Empty
-
-### Security
-- Empty
+- Fixed missing module
 
 ---
 

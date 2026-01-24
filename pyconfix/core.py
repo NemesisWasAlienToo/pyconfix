@@ -243,11 +243,18 @@ class ConfigOption:
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
         
+        # For custom types from python API, user can jsut create factory functions
+        # no fancy custom type detection is needed
+        try:
+            option_type = ConfigOptionType(option_type)
+        except Exception:
+            raise ValueError(f"Option '{name}' has an invalid type '{option_type}'")
+        
         if option_type == ConfigOptionType.ENUM:
             if len(choices or []) < 1:
                 raise ValueError(f"Multiple choice option {name} must have at least one choice")
             if default not in (choices or []):
-                raise ValueError(f"Invalid default for enum option {name}: {default}")
+                default = choices[0]
             if any(' ' in choice for choice in (choices or [])):
                 raise ValueError(f"Choice names cannot contain white space: in option {name}")
 
@@ -299,20 +306,39 @@ class ConfigOption:
             'choices': self.choices,
             'requires': self.requires,
         }
+    
+    def clone_with(self, **kwargs):
+        """
+        This method creates a copy of the current instance and updates its attributes with the values 
+        specified in the keyword arguments.
+        """
+        params = {
+            'name': self.name,
+            'option_type': self.option_type,
+            'default': self.default,
+            'external': self.external,
+            'data': self.data,
+            'description': self.description,
+            'dependencies': self.dependencies,
+            'options': self.options,
+            'choices': self.choices,
+            'expanded': self.expanded,
+            'requires': self.requires,
+        }
+        params.update(kwargs)
+        return ConfigOption(**params)
 
 class pyconfix:
-    def __init__(self, schem_files=[], output_file="output_config.json", output_diff_config="output_diff_config.json",
-                 save_func=None, save_diff_func=None, expanded=False, show_disabled=False):
+    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json",
+                 save_func=None, expanded=False, show_disabled=False):
         self.schem_files = schem_files
         self.output_file = output_file
-        self.output_diff_config = output_diff_config
         self.save_func = save_func
-        self.save_diff_func = save_diff_func
         self.show_disabled = show_disabled
         self.expanded = expanded
         self.options = []
+        self.aliases = {}
         self.config_name = ""
-        self.graphical = False
 
         self.save_key = ord('s')
         self.save_diff_key = ord('d')
@@ -322,6 +348,58 @@ class pyconfix:
         self.help_key = ord('h')
         self.abort_key = 1  # Ctrl+A
         self.description_key = 4  # Ctrl+D
+
+    def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
+        """Register an alias and guard against accidental duplicates."""
+        if alias_option.option_type != ConfigOptionType.ENUM:
+            raise ValueError("Only ENUM aliases are supported for now")
+
+        existing = self.aliases.get(alias_option.name)
+        if existing:
+            if skip_duplicate_check:
+                raise ValueError(f"Alias '{alias_option.name}' already exists")
+            else:
+                return existing
+        self.aliases[alias_option.name] = alias_option
+        return alias_option
+
+    def register_alias(self, name, option_type, choices):
+        """
+        Register an alias type that can be reused when defining options. Currently only ENUM aliases are supported.
+        """
+        alias_option = ConfigOption(
+            name=name,
+            option_type=option_type,
+            choices=choices,
+        )
+        return self._register_alias(alias_option)
+
+    def option_from_alias(self, alias_name, **kwargs):
+        """
+        Create a ConfigOption from a registered alias without mutating config.options.
+        """
+        if 'name' not in kwargs:
+            raise ValueError("You must provide a 'name' parameter when creating an option from an alias")
+        custom_type = self.aliases.get(alias_name)
+        if custom_type is None:
+            try:
+                alias_name = ConfigOptionType(alias_name)
+                custom_type = ConfigOption(
+                    name=alias_name,
+                    option_type=alias_name,
+                    default=kwargs.get('default'),
+                )
+            except Exception:
+                known = ", ".join(sorted(self.aliases.keys())) or "<none>"
+                raise ValueError(f"Alias '{alias_name}' is not registered. Known aliases: {known}")
+        return custom_type.clone_with(**kwargs)
+
+    def add_options(self, *options):
+        """
+        Convenience helper to append multiple ConfigOption instances.
+        """
+        self.options.extend(options)
+        return options
 
     def _show_help(self, stdscr):
         help_text = [
@@ -543,7 +621,7 @@ class pyconfix:
         while True:
             stdscr.clear()
             stdscr.border(0)
-            stdscr.addstr(0, 2, f" {self.config_name} ")
+            stdscr.addstr(0, 2, f" {self.config_name or 'Unnamed'} ")
             max_y, max_x = stdscr.getmaxyx()
             if not search_mode and max_y > 2:
                 info = f"'{curses.keyname(self.quite_key).decode()}': Exit, '{curses.keyname(self.save_key).decode()}': Save, '{curses.keyname(self.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(self.help_key).decode()}': Help"
@@ -820,17 +898,11 @@ class pyconfix:
         return current_row
 
     def _write_config(self, output_diff=True):
-        config_data = self.dump()
+        config_data = self.diff() if output_diff else self.dump()
         with open(self.output_file, 'w') as f:
             json.dump(config_data, f, indent=4)
         if self.save_func:
-            self.save_func(config_data, self.options)
-        if output_diff:
-            config_data = self.diff()
-            with open(self.output_diff_config, 'w') as f:
-                json.dump(config_data, f, indent=4)
-            if self.save_diff_func:
-                self.save_diff_func(config_data, self.options)
+            self.save_func(config_data, self, output_diff)
 
     def _save_config(self, stdscr, output_diff):
         self._write_config(output_diff)
@@ -896,6 +968,9 @@ class pyconfix:
             def __init__(self, group):
                 self.group = group
 
+            def get(self):
+                return self.group
+
             def action_option(self, name=None, dependencies="", requires=""):
                 def decorator(func):
                     option_name = name or func.__name__
@@ -914,30 +989,71 @@ class pyconfix:
             return GroupProxy(group)
         else:
             return GroupProxy(self)
-    
+        
+    def _parse_file(self, filepath):
+        if not os.path.exists(filepath):
+            print(f"Config file '{filepath}' does not exist.")
+            exit(1)
+        with open(filepath, 'r') as f:
+            config_data = json.load(f)
+            self.config_name = config_data.get('name', 'Configuration')
+            self.options += self._parse_options(config_data.get('options', {}))
+            
+            # Handle includes relative to current file
+            base_path = os.path.dirname(os.path.abspath(filepath))
+            for include_file in config_data.get('include', []):
+                include_path = os.path.join(base_path, include_file)
+                if not os.path.exists(include_path):
+                    raise ValueError(f"File {filepath} includes a non-existing file: {include_path}")
+                self._parse_file(include_path)
+
+    # @TODO: Fix callable group dependencies
+    def _parse_options(self, options_data):
+        parsed_options = []
+        for option_data in options_data:
+            option: ConfigOption
+            option_type_name = option_data['type']
+            name = option_data['name']
+            option = ConfigOption(
+                name=name,
+                option_type=ConfigOptionType.STRING,
+                default=option_data.get('default'),
+                description=option_data.get('description'),
+                data=option_data.get('data'),
+                dependencies=option_data.get('dependencies', ""),
+                requires=option_data.get('requires', ""),
+                choices=option_data.get('choices', []),
+                expanded=self.expanded,
+                options=[]
+            )
+            try:
+                option.option_type = ConfigOptionType(option_type_name)
+            except ValueError:
+                custom_type = self.aliases.get(option_type_name)
+                if custom_type is None:
+                    raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
+
+                option = custom_type.clone_with(
+                    name=name,
+                    default=option_data.get('default', custom_type.default),
+                    description=option_data.get('description', custom_type.description),
+                    dependencies=option_data.get('dependencies', custom_type.dependencies),
+                )
+            if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
+                option.options = self._parse_options(option_data['options'])
+            elif option.option_type == ConfigOptionType.ENUM:
+                option.value = option.choices.index(option.default)
+            parsed_options.append(option)
+        return parsed_options
+
     def load_schem(self, schem_files):
         """
-        Load configuration schema from JSON files.
-        :param schem_files: List of JSON schema files.
+        Load configuration schema from files.
+        :param schem_files: List of paths to JSON schema files.
         """
-        def parse_file(filepath):
-            with open(filepath, 'r') as f:
-                config_data = json.load(f)
-                self.config_name = config_data.get('name', 'Configuration')
-                self.options += self.parse_options(config_data['options'])
-                
-                # Handle includes relative to current file
-                base_path = os.path.dirname(os.path.abspath(filepath))
-                for include_file in config_data.get('include', []):
-                    include_path = os.path.join(base_path, include_file)
-                    if not os.path.exists(include_path):
-                        print(f"File {filepath} includes a non-existing file: {include_path}")
-                        exit()
-                    parse_file(include_path)
-
         # Parse each config file in the list
         for schem_file in schem_files:
-            parse_file(os.path.join(os.getcwd(), schem_file))
+            self._parse_file(os.path.join(os.getcwd(), schem_file))
 
         def combine(a, b):
             if a is None:
@@ -966,46 +1082,21 @@ class pyconfix:
 
         cascade_group(self.options)
 
-    # @TODO: Fix callable group dependencies
-    def parse_options(self, options_data):
-        parsed_options = []
-        for option_data in options_data:
-            option = ConfigOption(
-                name=option_data['name'],
-                option_type=option_data['type'],
-                default=option_data.get('default'),
-                description=option_data.get('description'),
-                data=option_data.get('data'),
-                dependencies=option_data.get('dependencies', ""),
-                requires=option_data.get('requires', ""),
-                choices=option_data.get('choices', []),
-                expanded=self.expanded,
-                options=[]
-            )
-            if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
-                option.options = self.parse_options(option_data['options'])
-            elif option.option_type == ConfigOptionType.ENUM:
-                option.value = option.choices.index(option.default)
-            parsed_options.append(option)
-        return parsed_options
-
-    def apply_config(self, config_file=None, overlay=None):
+    def apply_config(self, config_files=[], overlay=None):
         """
         Apply configuration from a file or overlay.
-        :param config_file: Optional path to a JSON config file.
         :param overlay: Optional dictionary to override settings.
         """
         saved_config = {}
-        if config_file:
+        for config_file in config_files:
             if not os.path.exists(config_file):
-                print(f"Invalid config file: {config_file}")
-                exit()
+                raise ValueError(f"Invalid config file: {config_file}")
             with open(config_file, 'r') as f:
-                saved_config = json.load(f)
-                print(f"File loaded: {config_file}")
-        elif os.path.exists(self.output_file):
-            with open(self.output_file, 'r') as f:
-                saved_config = json.load(f)
+                try:
+                    saved_config.update(json.load(f))
+                except json.JSONDecodeError:
+                    print(f"Invalid json file: {config_file}")
+                    exit(1)
 
         if overlay:
             saved_config.update(overlay)
@@ -1045,19 +1136,18 @@ class pyconfix:
         """
         curses.wrapper(self._menu_loop)
 
-    def run(self, config_file=None, overlay=None, graphical=True, output_diff=False):
+    def run(self, config_files=[], overlay=None, graphical=True):
         """
         Run the configuration process.
         :param config_file: Optional config file path.
         :param overlay: Optional dict to override settings.
         :param graphical: Use interactive mode if True.
-        :param output_diff: Save config diff in CLI mode if True.
-        :param write_to_file: Write output to file if True, else return a dict.
-        :return: dict if write_to_file is False.
         """
-        self.graphical = graphical
         self.load_schem(self.schem_files)
-        self.apply_config(config_file=config_file, overlay=overlay)
+
+        if len(config_files) == 0 and os.path.exists(self.output_file):
+            config_files = [self.output_file]
+        self.apply_config(config_files=config_files, overlay=overlay)
         if graphical:
             self.run_main_loop()
 
@@ -1069,7 +1159,6 @@ class pyconfix:
         :param requires: Optional requires function.
         :return: Decorator that registers the action.
         """
-
         return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
 
     def group_option(self, name, dependencies=""):
@@ -1086,7 +1175,6 @@ class pyconfix:
             '''Action description'''
             ...
         """
-
         self.options.append(ConfigOption(
             name=name,
             option_type=ConfigOptionType.GROUP,

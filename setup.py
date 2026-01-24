@@ -10,7 +10,7 @@ setup(
     author_email="nemesiswasalientoo@proton.me",
     url="https://github.com/NemesisWasAlienToo/pyconfix",
     py_modules=["pyconfix", "main"],
-    python_requires=">=3.7",
+    python_requires=">=3.11",
     license="MIT",
     install_requires=[
         "windows-curses;platform_system=='Windows'"

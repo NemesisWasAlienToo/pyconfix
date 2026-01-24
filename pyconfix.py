@@ -618,7 +618,7 @@ class pyconfix:
         while True:
             stdscr.clear()
             stdscr.border(0)
-            stdscr.addstr(0, 2, f" {self.config_name or "Unnamed"} ")
+            stdscr.addstr(0, 2, f" {self.config_name or 'Unnamed'} ")
             max_y, max_x = stdscr.getmaxyx()
             if not search_mode and max_y > 2:
                 info = f"'{curses.keyname(self.quite_key).decode()}': Exit, '{curses.keyname(self.save_key).decode()}': Save, '{curses.keyname(self.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(self.help_key).decode()}': Help"
@@ -1023,9 +1023,9 @@ class pyconfix:
                 expanded=self.expanded,
                 options=[]
             )
-            if option_type_name in ConfigOptionType:
-                option.option_type=option_type_name
-            else:
+            try:
+                option.option_type = ConfigOptionType(option_type_name)
+            except ValueError:
                 custom_type = self.aliases.get(option_type_name)
                 if custom_type is None:
                     raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
@@ -1141,7 +1141,10 @@ class pyconfix:
         :param graphical: Use interactive mode if True.
         """
         self.load_schem(self.schem_files)
-        self.apply_config(config_files=config_files if len(config_files) > 0 else [self.output_file], overlay=overlay)
+
+        if len(config_files) == 0 and os.path.exists(self.output_file):
+            config_files = [self.output_file]
+        self.apply_config(config_files=config_files, overlay=overlay)
         if graphical:
             self.run_main_loop()
 

@@ -27,18 +27,44 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 ```bash
 pip install pyconfix
 ```
-
----
-
 ## Quick start
 
-Create a tiny launcher script first:
+### Using the command
+
+In order to use pyconfix in the most minimal and easy-to-use setup, just create a __pyconfixfile.json__ file inside the current working directory, add your options to it (example bellow) and run:
+
+```sh
+pyconfix
+```
+
+Here's an example of how the json file could look like:
+
+```json
+{
+    "name": "Test Config",
+    "options": [
+        {
+            "name": "ENABLE_FEATURE_A",
+            "type": "bool",
+            "default": true,
+        },
+        {
+            "name": "DISABLED_BY_DEFAULT",
+            "type": "bool",
+            "default": false
+        }
+    ]
+}
+```
+
+### Writing runner
+
+A minimal pyconfix script that can be run and also serve as a starting point for further customizations could look like:
 
 ```python
 # menu.py
-import pyconfix
-
-pyconfix.pyconfix(schem_file=["schem.json"]).run()
+from pyconfix import pyconfix
+pyconfix().run()
 ```
 
 Then run it:
@@ -48,8 +74,25 @@ python menu.py
 ```
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
+The minimal example could be found in the __minimal_example.py__ script. To see a frther customized version you can check out __example.py__ script which uses the __schem.json__ file which uses more advanced features like aliases and tasks.
 
-## Headless / CI mode
+### Custom save function
+
+Want to emit something other than the default JSON? Pass a `save_func` callable when you create the instance. It receives the flattened config dict and the option tree, so you can write out any format you need:
+
+```python
+def write_header(cfg, config, is_diff):
+    with open("config.h", "w") as f:
+        for key, value in cfg.items():
+            f.write(f"#define {key} {value}\n")
+
+pyconfix(
+    schem_files=["schem.json"],
+    save_func=write_header,
+).run()
+```
+
+## Headless / CLI mode
 
 Run the schema parser non‑interactively to dump a JSON config – handy for scripts and pipelines:
 
@@ -57,10 +100,10 @@ Run the schema parser non‑interactively to dump a JSON config – handy for sc
 python - <<'PY'
 import pyconfix, json
 cfg = pyconfix.pyconfix(
-    schem_file=["schem.json"],
+    schem_files=["schem.json"],
     output_file="cfg.json"
 )
-cfg.run(graphical=False, config_file="prev.json")
+cfg.run(graphical=False, config_files=["prev.json"])
 PY
 ```
 
@@ -72,8 +115,8 @@ If you’d rather drive everything from code, import the class:
 from pyconfix import pyconfix
 
 cfg = pyconfix(
-    schem_file=["main.json", "extras.json"],
-    config_file="prev.json",      # load an existing config (optional)
+    schem_files=["main.json", "extras.json"],
+    config_files=["prev.json"],      # load an existing config (optional)
     output_file="final.json",     # where to write when you press "s"
     expanded=True,                 # expand all groups initially
     show_disabled=True             # show options that currently fail deps
@@ -87,10 +130,9 @@ Constructor signature for reference:
 
 ```python
 pyconfix(
-    schem_file: list[str],
-    config_file: str | None = None,
+    schem_files: list[str] | None = ["pyconfixfile.json"],
     output_file: str = "output_config.json",
-    save_func: Callable[[dict, list], None] | None = None,
+    save_func: Callable[[dict, "pyconfix", bool], None] | None = None,
     expanded: bool = False,
     show_disabled: bool = False,
 )
@@ -203,23 +245,38 @@ cfg.options.extend([
 | `group`           | nests other options      |
 | `action`          | executable task option   |
 
+### Aliases
+
+You can register alias types (currently **ENUM** only) and reuse them in both JSON schema files and the Python API. This is useful for reusing common choice sets like tri-state options.
+
+- Python usage: register the alias before loading the schema (or before `run()`), then create options from it:
+```python
+cfg.register_alias(
+    name='tri-state', 
+    option_type=ConfigOptionType.ENUM,
+    choices=['INTEGRATED', 'MODULE', 'DISABLED']
+)
+```
+
+> **Note:** Registering aliases is currently only available through the python API and only enum aliases are supported for now.
+
 ### Dependency syntax – cheatsheet
 
 ```text
 !ENABLE_FEATURE_A                     # logical NOT
 ENABLE_FEATURE_A && HOST=="dev"       # logical AND + comparison
 TIMEOUT>5 || HOST=="localhost"        # logical OR  + relational
-COUNT+5 > MAX_VALUE                     # addition + relational
-SIZE-1 >= MIN_SIZE                      # subtraction + comparison
-VALUE*2 == LIMIT                        # multiplication + equality
-RATIO/3 < 1                             # division + relational
-SIZE%4==0                               # modulus check
-POWER**2 <= LIMIT                       # exponentiation + relational
-BITS & 0xFF == 0xAA                     # bitwise AND + equality
-FLAGS | FLAG_VERBOSE                    # bitwise OR
-MASK ^ 0b1010                           # bitwise XOR
-VALUE<<2 > 1024                         # left shift + relational
-VALUE>>1 == 0                           # right shift + equality
+COUNT+5 > MAX_VALUE                   # addition + relational
+SIZE-1 >= MIN_SIZE                    # subtraction + comparison
+VALUE*2 == LIMIT                      # multiplication + equality
+RATIO/3 < 1                           # division + relational
+SIZE%4==0                             # modulus check
+POWER**2 <= LIMIT                     # exponentiation + relational
+BITS & 0xFF == 0xAA                   # bitwise AND + equality
+FLAGS | FLAG_VERBOSE                  # bitwise OR
+MASK ^ 0b1010                         # bitwise XOR
+VALUE<<2 > 1024                       # left shift + relational
+VALUE>>1 == 0                         # right shift + equality
 ```
 
 ## Advanced usage
@@ -242,7 +299,7 @@ pyconfix.pyconfix(
 ## Export in any format
 The configurations can be exported in any desirable format by using custom save functions. Here is an example pf the current configurations bein exported in the kconfig format:
 ```py
-def custom_save(json_data, _):
+def custom_save(json_data, config, is_diff):
     with open("output_defconfig", 'w') as f:
         for key, value in json_data.items():
             if value == None or (isinstance(value, bool) and value == False):
@@ -284,7 +341,62 @@ __IMPORTANT:__ The big difference between attribute syntax and `get` function is
 
 ## Conan integration example
 
-After saving a JSON config with pyconfix (`settings.json`), a Conan recipe can read that file to enable/disable features and tweak package options at build time.
+THe recommended way of retrieving the settings in conan is to use the pyconfix to read and dump the current settings. If you are using the default command and the default config names this i trivial:
+
+```python
+# conanfile.py
+from conan import ConanFile
+from pyconfix import pyconfix
+
+config = pyconfix()
+config.run(graphical=False)
+
+class MyProject(ConanFile):
+    name = "myproject"
+    version = "1.0"
+
+    # The default options can also be parsed from config.options
+    # but for this example we can just type them in
+    options = {
+        "feature_a": [True, False],
+        "log_level": ["DEBUG", "INFO", "WARN", "ERROR"],
+    }
+    # This could also directly be parsed from config.dump()
+    default_options = {
+        "feature_a": bool(config.ENABLE_FEATURE_A),
+        "log_level": bool(config.LOG_LEVEL),
+    }
+```
+
+Or if you are using a customized script version, you can create and return your config in a function and use it in your conanfile. Let's assume that function is called __get_config__:
+
+```python
+# conanfile.py
+from conan import ConanFile
+from pyconfix import pyconfix
+
+config = my_script.get_config()
+config.run(graphical=False)
+
+class MyProject(ConanFile):
+    name = "myproject"
+    version = "1.0"
+
+    # The default options can also be parsed from config.options
+    # but for this example we can just type them in
+    options = {
+        "feature_a": [True, False],
+        "log_level": ["DEBUG", "INFO", "WARN", "ERROR"],
+    }
+    # This could also directly be parsed from config.dump()
+    default_options = {
+        "feature_a": bool(config.ENABLE_FEATURE_A),
+        "log_level": bool(config.LOG_LEVEL),
+    }
+```
+
+This eliminates the need to sync up the customized settings inside the conanfile and running script.
+You could also just read the config json files directly and this might be less complex, but then the file names needs to stay sync if a custom runner script is used:
 
 ```python
 # conanfile.py

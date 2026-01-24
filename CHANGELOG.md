@@ -27,6 +27,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.10.6]
+### Added
+- Added support for multiple config files
+- Added get function for Group Proxy
+- Added default title for unnamed config
+- Added default value for multiple choice options
+- Added aliase support
+- Added a main script file
+- Added flag for specifying config files to the command script
+- Added version flag to the command script
+
+### Changed
+- Unified the diff and output path
+- Unified the save function by adding a diff flag and using the same function for both paths
+- Improved the way arguments are passed to the object in the default command script
+- Removed `graphical` from internal variables
+- Unified the function for loading config files and the cache file
+- Changed minimal python version for this package
+- Cleaned up the folder structure
+
+### Fixed
+- Added error handling for loading of config files
+- Fixed missing module
+- Windows command
+
+---
+
 ## [0.8.0]
 ### Added
 - Stack trace for action execution

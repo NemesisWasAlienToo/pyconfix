@@ -245,7 +245,9 @@ class ConfigOption:
         
         # For custom types from python API, user can jsut create factory functions
         # no fancy custom type detection is needed
-        if option_type not in ConfigOptionType:
+        try:
+            option_type = ConfigOptionType(option_type)
+        except Exception:
             raise ValueError(f"Option '{name}' has an invalid type '{option_type}'")
         
         if option_type == ConfigOptionType.ENUM:
@@ -380,13 +382,14 @@ class pyconfix:
             raise ValueError("You must provide a 'name' parameter when creating an option from an alias")
         custom_type = self.aliases.get(alias_name)
         if custom_type is None:
-            if alias_name in ConfigOptionType:
+            try:
+                alias_name = ConfigOptionType(alias_name)
                 custom_type = ConfigOption(
                     name=alias_name,
                     option_type=alias_name,
                     default=kwargs.get('default'),
                 )
-            else:
+            except Exception:
                 known = ", ".join(sorted(self.aliases.keys())) or "<none>"
                 raise ValueError(f"Alias '{alias_name}' is not registered. Known aliases: {known}")
         return custom_type.clone_with(**kwargs)

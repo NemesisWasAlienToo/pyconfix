@@ -327,7 +327,7 @@ class ConfigOption:
         return ConfigOption(**params)
 
 class pyconfix:
-    def __init__(self, schem_files=[], output_file="output_config.json", output_diff_config="output_diff_config.json",
+    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json", output_diff_config="output_diff_config.json",
                  save_func=None, save_diff_func=None, expanded=False, show_disabled=False):
         self.schem_files = schem_files
         self.output_file = output_file
@@ -997,6 +997,9 @@ class pyconfix:
             return GroupProxy(self)
         
     def _parse_file(self, filepath):
+        if not os.path.exists(filepath):
+            print(f"Config file '{filepath}' does not exist.")
+            exit(1)
         with open(filepath, 'r') as f:
             config_data = json.load(f)
             self.config_name = config_data.get('name', 'Configuration')

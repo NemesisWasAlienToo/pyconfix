@@ -32,16 +32,18 @@ def create_config():
         config.option_from_alias('string', name='STRING_FROM_ALIAS', default='Default string value'),
         ConfigOption(
             name='OS',
-            option_type=ConfigOptionType.STRING,
-            default=platform.system(),
-            external=True
+            option_type=ConfigOptionType.EXTERNAL,
+            default=platform.system()
+        ),
+        ConfigOption(
+            name='OS_LIVE',
+            option_type=ConfigOptionType.EXTERNAL,
+            default=lambda: platform.system()
         ),
         ConfigOption(
             name='PYTHON_EVALUATED',
-            option_type=ConfigOptionType.STRING,
-            default=".".join(map(str, sys.version_info[:3])),
-            dependencies=lambda x: x.ENABLE_FEATURE_A,
-            external=True
+            option_type=ConfigOptionType.EXTERNAL,
+            default=".".join(map(str, sys.version_info[:3]))
         ),
     )
 

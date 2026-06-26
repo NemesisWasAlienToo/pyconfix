@@ -10,6 +10,7 @@ import curses
 import curses.textpad
 import os
 import textwrap
+import sys
 
 from .parser import *
 from .option import *
@@ -42,7 +43,7 @@ class pyconfix:
 
         existing = self.aliases.get(alias_option.name)
         if existing:
-            if skip_duplicate_check:
+            if not skip_duplicate_check:
                 raise ValueError(f"Alias '{alias_option.name}' already exists")
             else:
                 return existing
@@ -117,11 +118,11 @@ class pyconfix:
         while True:
             stdscr.clear()
             max_y, _ = stdscr.getmaxyx()
+            display_limit = max(1, max_y - 3)
             if max_y > 2:
                 stdscr.addstr(max_y - 2, 2, "Press 'q' to return to the menu or UP/DOWN to scroll")
 
             if max_y >= 4:
-                display_limit = max_y - 3
                 for idx, line in enumerate(help_text[start_index:start_index + display_limit]):
                     stdscr.addstr(idx + 1, 2, line)
             
@@ -149,57 +150,32 @@ class pyconfix:
 
     def _is_option_available(self, option):
         def _is_option_available_impl(option, root):
-            def getter_function_impl(key, options_list):
-                key_upper = key.upper()
-                if key_upper == root:
-                    raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
-                for opt in options_list:
-                    if opt.option_type == ConfigOptionType.GROUP:
-                        found, value = getter_function_impl(key, opt.options)
-                        if found:
-                            return True, value
-                    # Compare names in a case-insensitive manner.
-                    elif opt.name.upper() == key_upper:
-                        if not _is_option_available_impl(opt, root):
-                            return True, False
-                        default_value = opt.default
-                        if opt.option_type == ConfigOptionType.ENUM:
-                            default_value = opt.choices.index(opt.default)
-                            return True, opt.choices[opt.value] if opt.value is not None else default_value
-                        return True, opt.value if opt.value is not None else default_value
-                    # If an enum value being parsed as key instead of a key name
-                    elif opt.option_type == ConfigOptionType.ENUM:
-                        for choice in opt.choices:
-                            if choice.upper() == key_upper:
-                                return True, key
-                return False, None
-
-            def getter_function(key):
-                found, value = getter_function_impl(key, self.options)
-                if not found:
-                    raise ValueError(f"Invalid token: {key}")
-                return value
-
             if not option.dependencies:
                 return True
-            if callable(option.dependencies):
-                return option.dependencies(self)
-            else:
-                parser = BooleanExpressionParser(getter=getter_function)
-                return parser.evaluate_postfix(option.postfix_dependencies)
+            if not callable(option.dependencies): raise ValueError('Not callable dependencies')
+            return option.dependencies(self)
         return _is_option_available_impl(option, option.name)
+
+    def _sync_option_value(self, option, available):
+        """Keep an option's value in sync with its availability.
+
+        Disabling an option blanks its value; re-enabling restores it from the
+        default. This must run wherever availability is (re)evaluated so the
+        bookkeeping stays correct in both the normal and search views.
+        """
+        if not available:
+            if option.option_type != ConfigOptionType.GROUP:
+                option.value = None
+        elif option.value is None:
+            option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
 
     def _flatten_options(self, options, depth=0):
         flat_options = []
         for option in options:
-            if not self._is_option_available(option):
-                if option.option_type != ConfigOptionType.GROUP:
-                    option.value = None
-                if not self.show_disabled:
-                    continue
-            else:
-                if option.value is None:
-                    option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
+            available = self._is_option_available(option)
+            self._sync_option_value(option, available)
+            if not available and not self.show_disabled:
+                continue
             flat_options.append((option, depth))
             if option.option_type == ConfigOptionType.GROUP and option.expanded:
                 flat_options.extend(self._flatten_options(option.options, depth + 1))
@@ -208,7 +184,9 @@ class pyconfix:
     def _search_options(self, options, query, depth=0):
         flat_options = []
         for option in options:
-            if self.show_disabled or self._is_option_available(option):
+            available = self._is_option_available(option)
+            self._sync_option_value(option, available)
+            if self.show_disabled or available:
                 if option.option_type == ConfigOptionType.GROUP:
                     nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
@@ -226,6 +204,7 @@ class pyconfix:
             stdscr.border(0)
             stdscr.addstr(0, 2, f" {option.name} ")
             max_y, max_x = stdscr.getmaxyx()
+            display_limit = max(1, max_y - 3)
 
             content = [
                 "",
@@ -247,7 +226,6 @@ class pyconfix:
                     wrapped_content.extend(textwrap.wrap(line, max_x - 4))
 
             if max_y >= 4:
-                display_limit = max_y - 3
                 for idx, line in enumerate(wrapped_content[start_index:start_index + display_limit]):
                     stdscr.addstr(idx + 1, 2, line)
             
@@ -611,7 +589,9 @@ class pyconfix:
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
-                default_value = option.default if option.option_type != ConfigOptionType.ENUM else option.choices.index(option.default)
+                # option.default is the choice string for enums, so this emits a
+                # string for the disabled/None path just like the active path below.
+                default_value = option.default
                 value_to_save = default_value if option.value is None else (
                     option.choices[option.value] if option.option_type == ConfigOptionType.ENUM
                     else option.value)
@@ -659,7 +639,7 @@ class pyconfix:
             def get(self):
                 return self.group
 
-            def action_option(self, name=None, dependencies="", requires=""):
+            def action_option(self, name=None, dependencies=None, requires=None):
                 def decorator(func):
                     option_name = name or func.__name__
                     new_option = ConfigOption(
@@ -679,60 +659,127 @@ class pyconfix:
             return GroupProxy(self)
         
     def _parse_file(self, filepath):
-        if not os.path.exists(filepath):
-            print(f"Config file '{filepath}' does not exist.")
-            exit(1)
+        if not os.path.exists(filepath): sys.exit(f"Config file '{filepath}' does not exist.")
         with open(filepath, 'r') as f:
             config_data = json.load(f)
-            self.config_name = config_data.get('name', 'Configuration')
-            self.options += self._parse_options(config_data.get('options', {}))
-            
-            # Handle includes relative to current file
+            if (len(config_data.keys()) != 1): sys.exit(f"Json file {filepath} has more than one top entry")
+
             base_path = os.path.dirname(os.path.abspath(filepath))
-            for include_file in config_data.get('include', []):
-                include_path = os.path.join(base_path, include_file)
-                if not os.path.exists(include_path):
-                    raise ValueError(f"File {filepath} includes a non-existing file: {include_path}")
-                self._parse_file(include_path)
+            self.config_name, value = next(iter(config_data.items()))
+            self.options += self._parse_options(value, base_path)
 
     # @TODO: Fix callable group dependencies
-    def _parse_options(self, options_data):
+    def _parse_options(self, options_data, base_path):
         parsed_options = []
-        for option_data in options_data:
-            option: ConfigOption
-            option_type_name = option_data['type']
-            name = option_data['name']
-            option = ConfigOption(
-                name=name,
-                option_type=ConfigOptionType.STRING,
-                default=option_data.get('default'),
-                description=option_data.get('description'),
-                data=option_data.get('data'),
-                dependencies=option_data.get('dependencies', ""),
-                requires=option_data.get('requires', ""),
-                choices=option_data.get('choices', []),
-                expanded=self.expanded,
-                options=[]
-            )
-            try:
-                option.option_type = ConfigOptionType(option_type_name)
-            except ValueError:
-                custom_type = self.aliases.get(option_type_name)
-                if custom_type is None:
-                    raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
-
-                option = custom_type.clone_with(
-                    name=name,
-                    default=option_data.get('default', custom_type.default),
-                    description=option_data.get('description', custom_type.description),
-                    dependencies=option_data.get('dependencies', custom_type.dependencies),
-                )
-            if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
-                option.options = self._parse_options(option_data['options'])
-            elif option.option_type == ConfigOptionType.ENUM:
-                option.value = option.choices.index(option.default)
-            parsed_options.append(option)
+        for key, value in options_data.items():
+            if key == 'include':
+                # Handle includes relative to current file
+                for include_file in value:
+                    include_path = os.path.join(base_path, include_file)
+                    if not os.path.exists(include_path):
+                        raise ValueError(f"A non-existing file was included: {include_path}")
+                    self._parse_file(include_path)
+            else:
+                parsed_options.append(self._parse_option(key, value, base_path))
         return parsed_options
+    
+    def _parse_option(self, name, option_data, base_path):
+
+        if not isinstance(option_data, dict):
+            if isinstance(option_data, list):
+                option_data = {'choices': option_data}
+            else:
+                option_data = {'default': option_data}
+
+        option_type_name = ''
+        def_value = option_data.get('default', None)
+        if 'type' in option_data:
+            option_type_name = option_data['type']
+        elif 'choices' in option_data:
+            def_value = def_value or option_data['choices'][0]
+            option_type_name = ConfigOptionType.ENUM
+        elif isinstance(def_value, bool):
+            option_type_name = ConfigOptionType.BOOL
+        elif isinstance(def_value, int):
+            option_type_name = ConfigOptionType.INT
+        elif isinstance(def_value, str):
+            option_type_name = ConfigOptionType.STRING
+        else:
+            option_type_name = ConfigOptionType.GROUP
+            option_data = {'options': option_data}
+
+        option = ConfigOption(
+            name=name,
+            option_type=ConfigOptionType.STRING,
+            default=option_data.get('default', def_value),
+            description=option_data.get('description'),
+            data=option_data.get('data'),
+            dependencies=option_data.get('dependencies', ""),
+            requires=option_data.get('requires', ""),
+            choices=option_data.get('choices', []),
+            expanded=self.expanded,
+            options=[]
+        )
+        try:
+            option.option_type = ConfigOptionType(option_type_name)
+        except ValueError:
+            custom_type = self.aliases.get(option_type_name)
+            if custom_type is None:
+                raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
+
+            option = custom_type.clone_with(
+                name=name,
+                default=option_data.get('default', custom_type.default),
+                # default=option_data.get('default', def_value),
+                description=option_data.get('description', custom_type.description),
+                dependencies=option_data.get('dependencies', custom_type.dependencies),
+            )
+        if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
+            option.options = self._parse_options(option_data['options'], base_path)
+        elif option.option_type == ConfigOptionType.ENUM:
+            option.value = option.choices.index(option.default)
+        
+        def _is_option_available_impl(option, root):
+            def getter_function_impl(key, options_list):
+                key_upper = key.upper()
+                if key_upper == root:
+                    raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
+                for opt in options_list:
+                    if opt.option_type == ConfigOptionType.GROUP:
+                        found, value = getter_function_impl(key, opt.options)
+                        if found:
+                            return True, value
+                    # Compare names in a case-insensitive manner.
+                    elif opt.name.upper() == key_upper:
+                        if not _is_option_available_impl(opt, root):
+                            return True, False
+                        default_value = opt.default
+                        if opt.option_type == ConfigOptionType.ENUM:
+                            default_value = opt.choices.index(opt.default)
+                            return True, opt.choices[opt.value] if opt.value is not None else default_value
+                        return True, opt.value if opt.value is not None else default_value
+                    # If an enum value being parsed as key instead of a key name
+                    elif opt.option_type == ConfigOptionType.ENUM:
+                        for choice in opt.choices:
+                            if choice.upper() == key_upper:
+                                return True, key
+                return False, None
+
+            def getter_function(key):
+                found, value = getter_function_impl(key, self.options)
+                if not found:
+                    raise ValueError(f"Invalid token: {key}")
+                return value
+
+            if not option.dependencies:
+                return lambda x: True
+            if callable(option.dependencies):
+                return lambda x:option.dependencies(x)
+            else:
+                parser = BooleanExpressionParser(getter=getter_function)
+                return lambda x:parser.evaluate_postfix(option.postfix_dependencies)
+        option.dependencies = _is_option_available_impl(option, option.name)
+        return option
 
     def load_schem(self, schem_files):
         """
@@ -749,20 +796,15 @@ class pyconfix:
             if b is None:
                 return a
             
-            if not callable(a) and not callable(b):
-                return b + (" && " if b and a else "") + a
-            elif callable(a) and callable(b):
-                return lambda x: a(x) and b(x)
-            else:
-                raise ValueError("Cannot mix callable and non-callable in a group's dependencies and requires")
+            if not callable(a) or not callable(b):
+                raise ValueError("Combining non-callable")
+            return lambda x: a(x) and b(x)
 
         def cascade_group(options, group_dependencies = None, group_requires = None):
             """Cascade dependencies and requires from groups to their options."""
             for opt in options:
                 if group_dependencies:
                     opt.dependencies = combine(group_dependencies, opt.dependencies)
-                    # @TODO: Maybe mix this somehow with the constructor or remove the one there
-                    opt.postfix_dependencies = shunting_yard(tokenize(opt.dependencies))
                 if group_requires:
                     opt.requires = combine(group_requires, opt.requires)
                 if opt.option_type == ConfigOptionType.GROUP:
@@ -839,7 +881,7 @@ class pyconfix:
         if graphical:
             self.run_main_loop()
 
-    def action_option(self, name=None, dependencies="", requires=""):
+    def action_option(self, name=None, dependencies=None, requires=None):
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
@@ -849,14 +891,14 @@ class pyconfix:
         """
         return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
 
-    def group_option(self, name, dependencies=""):
+    def group_option(self, name, dependencies=None):
         """
         Create an option group.
         :param name: Group name.
         :param dependencies: Optional dependency expression or function.
         :return: GroupProxy object for adding action options.
         Usage:
-            group = config.group_option("my_group", dependencies="some_option")
+            group = config.group_option("my_group", dependencies=None)
             
             @group.action_option()
             def my_action(config):

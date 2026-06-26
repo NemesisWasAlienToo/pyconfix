@@ -55,7 +55,7 @@ def tokenize(expression: str):
             tokens.append(expression[start:i])
         elif char in ('&', '|', '!', '=', '>', '<', '+', '-', '*', '/', '^', '%'):
             # Check for two-character operators
-            if i + 1 < n and expression[i:i+2] in ('&&', '||', '==', '!=', '>=', '<=', '>>', '<<'):
+            if i + 1 < n and expression[i:i+2] in ('&&', '||', '==', '!=', '>=', '<=', '>>', '<<', '**'):
                 tokens.append(expression[i:i+2])
                 i += 2
             else:
@@ -71,26 +71,33 @@ def tokenize(expression: str):
 def shunting_yard(tokens, precedence=None):
     """
     Converts a list of tokens (in infix notation) to a postfix list.
-    Precedence mapping:
-      !   : 7
-      **  : 6 (power)
-      *, /, % : 5
-      +, - : 4
-      >>, <<, & : 3
+    Precedence mapping (high to low), with the bitwise family ordered as in C
+    (<<,>> above &, above ^, above |) and kept above the comparison operators:
+      !   : 10
+      **  : 9 (power)
+      *, /, % : 8
+      +, - : 7
+      <<, >> : 6
+      &   : 5
+      ^   : 4
+      |   : 3
       ==, !=, >, <, >=, <= : 2
       &&  : 1
-      ||, | : 0
+      ||  : 0
     """
     if precedence is None:
         precedence = {
-            '!': 7,
-            '**': 6,
-            '*': 5, '/': 5, '%': 5,
-            '+': 4, '-': 4,
-            '>>': 3, '<<': 3, '&': 3, '^': 3,
+            '!': 10,
+            '**': 9,
+            '*': 8, '/': 8, '%': 8,
+            '+': 7, '-': 7,
+            '<<': 6, '>>': 6,
+            '&': 5,
+            '^': 4,
+            '|': 3,
             '==': 2, '!=': 2, '>': 2, '<': 2, '>=': 2, '<=': 2,
             '&&': 1,
-            '||': 0, '|': 0,
+            '||': 0,
         }
     right_associative = {'!', '**'}
     output = []

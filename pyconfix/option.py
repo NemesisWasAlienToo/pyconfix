@@ -19,7 +19,7 @@ class ConfigOptionType(StrEnum):
 
 class ConfigOption:
     def __init__(self, name, option_type:ConfigOptionType, default=None, data=None, description="",
-                 dependencies="", options=None, choices=None, expanded=False, requires=None):
+                 dependencies=None, options=None, choices=None, expanded=False, requires=None):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
         

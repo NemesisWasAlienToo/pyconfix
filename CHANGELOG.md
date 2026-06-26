@@ -27,6 +27,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.12.0]
+### Added
+- Added missing power operator
+- New syntax for simplicity
+
+### Changed
+- Syntax of the json file
+
+### Fixed
+- Power operator
+- Operator order
+
+### Deprecated
+- Old json syntax
+
+---
+
 ## [0.10.6]
 ### Added
 - Added support for multiple config files

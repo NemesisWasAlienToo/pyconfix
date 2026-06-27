@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [0.12.0]
+## [0.12.1]
 ### Added
 - Added missing power operator
 - New syntax for simplicity
@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 - Power operator
 - Operator order
+- Fixed search for groups
 
 ### Deprecated
 - Old json syntax

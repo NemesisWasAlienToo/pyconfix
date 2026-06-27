@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="pyconfix",
-    version="0.11.0",
+    version="0.12.1",
     description="A simple feature managment tool library",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

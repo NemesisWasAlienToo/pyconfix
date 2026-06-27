@@ -81,7 +81,6 @@
                     "default": false
                 },
                 "GROUP_3": {
-                    "type": "group",
                     "options": {
                         "SUB_C": {
                             "type": "bool",

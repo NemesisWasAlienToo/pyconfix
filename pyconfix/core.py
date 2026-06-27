@@ -188,13 +188,14 @@ class pyconfix:
             self._sync_option_value(option, available)
             if self.show_disabled or available:
                 if option.option_type == ConfigOptionType.GROUP:
+                    option.expanded = True
+                if query.lower() in option.name.lower():
+                    flat_options.extend(self._flatten_options([option], depth))
+                elif option.option_type == ConfigOptionType.GROUP:
                     nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
-                        option.expanded = True
                         flat_options.append((option, depth))
                         flat_options.extend(nested_options)
-                elif query.lower() in option.name.lower():
-                    flat_options.append((option, depth))
         return flat_options
     
     def _description_page(self, stdscr, option):
@@ -704,6 +705,9 @@ class pyconfix:
             option_type_name = ConfigOptionType.INT
         elif isinstance(def_value, str):
             option_type_name = ConfigOptionType.STRING
+        elif 'options' in option_data:
+            option_type_name = ConfigOptionType.GROUP
+            option_data = {'options': option_data}
         else:
             option_type_name = ConfigOptionType.GROUP
             option_data = {'options': option_data}

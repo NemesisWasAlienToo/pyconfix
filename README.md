@@ -13,7 +13,7 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 ## Features
 
 * Hierarchical options – `bool`, `int`, `string`, `enum`, recursive groups.
-* Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!` (keyword forms `and`, `or`, `xor`), comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
+* Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!`, comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
 * Composable schemas – `"include"`: split large configs.
 * Instant search (`/`).
 * ⏹ Abort key – Ctrl+A exits search, input boxes etc.
@@ -41,21 +41,17 @@ Here's an example of how the json file could look like:
 
 ```json
 {
-    "name": "Test Config",
-    "options": [
-        {
-            "name": "ENABLE_FEATURE_A",
-            "type": "bool",
-            "default": true,
-        },
-        {
-            "name": "DISABLED_BY_DEFAULT",
-            "type": "bool",
-            "default": false
-        }
-    ]
+    "Test Config": {
+        "ENABLE_FEATURE_A": true,
+        "DISABLED_BY_DEFAULT": false
+    }
 }
 ```
+
+The single top-level key is the configuration name, and every option is keyed by
+its own name. Types are deduced from the value, so a plain `true`/`false` is all
+you need for a boolean. See [Schema format](#schema-format) for the full set of
+shorthands.
 
 ### Writing runner
 
@@ -213,37 +209,102 @@ cfg.options.extend([
 
 ## Schema format
 
+A schema is a single JSON object whose **one** top-level key is the configuration
+name. Its value maps each **option name** to that option's definition:
+
 ```json
 {
-  "name": "Main Config",
-  "options": [
-    { "name": "ENABLE_FEATURE_A", "type": "bool", "default": true },
-    {
-      "name": "LogLevel",
-      "type": "enum",
+  "Main Config": {
+    "ENABLE_FEATURE_A": true,
+
+    "LogLevel": {
       "default": "INFO",
       "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
       "dependencies": "ENABLE_FEATURE_A"
     },
-    { "name": "TIMEOUT", "type": "int", "default": 10, "dependencies": "ENABLE_FEATURE_A && LogLevel==DEBUG" },
-    { "name": "Network", "type": "group", "options": [
-      { "name": "HOST", "type": "string", "default": "localhost" }
-    ]}
-  ],
-  "include": ["extra_schem.json"]
+
+    "TIMEOUT": { "default": 10, "dependencies": "ENABLE_FEATURE_A && LogLevel==DEBUG" },
+
+    "Network": {
+      "HOST": "localhost"
+    },
+
+    "include": ["extra_schem.json"]
+  }
 }
 ```
 
+Because each option is keyed by its name, names are unique and must not contain
+whitespace. `"include"` is a reserved key (a list of other schema files to pull
+in) and lives alongside the options.
+
+### Shorthands & type inference
+
+You rarely need to spell out `"type"` — pyconfix deduces it from the value:
+
+| You write                        | Becomes                                          |
+| -------------------------------- | ------------------------------------------------ |
+| `"NAME": true` / `false`         | `bool` with that default                         |
+| `"NAME": 42`                     | `int` with that default                          |
+| `"NAME": "text"`                 | `string` with that default                       |
+| `"NAME": ["A", "B", "C"]`        | `enum` with those choices (default = first)      |
+| `{ "default": ... }`             | type inferred from the default's JSON type       |
+| `{ "choices": [...] }`           | `enum` (default = `default` or the first choice) |
+| `{ "OTHER": ..., "MORE": ... }`  | `group` — any object without `type`/`default`/`choices` is treated as a group whose keys are its child options |
+
+Set `"type"` explicitly to override inference. It is **required** for `action`
+options and registered [aliases](#aliases) (e.g. `tri-state`), since those have
+no value to infer from.
+
+### Full definition object
+
+Any option may be written in long form with these keys:
+
+| Key            | Applies to       | Notes                                              |
+| -------------- | ---------------- | -------------------------------------------------- |
+| `type`         | all              | `bool`, `int`, `string`, `enum`, `group`, `action`, or an alias |
+| `default`      | leaf options     | initial value (the chosen string for `enum`)       |
+| `choices`      | `enum`           | list of allowed values                             |
+| `description`  | all              | shown on the description page (`Ctrl+D`)           |
+| `dependencies` | all              | expression controlling availability (see below)   |
+| `data`         | all              | arbitrary payload passed through to your save hook |
+| `options`      | `group`          | nested options (or just nest them directly)        |
+| `requires`     | `action`/`group` | predicate callable (Python API only)               |
+
 ### Supported option types
 
-| Type              | Notes                    |
-| ----------------- | ------------------------ |
-| `bool`            | `true` / `false`         |
-| `int`             | any integer              |
-| `string`          | unicode string           |
-| `enum` | one value from `choices` |
-| `group`           | nests other options      |
-| `action`          | executable task option   |
+| Type     | Notes                                          |
+| -------- | ---------------------------------------------- |
+| `bool`   | `true` / `false`                               |
+| `int`    | any integer                                    |
+| `string` | unicode string                                 |
+| `enum`   | one value from `choices`                       |
+| `group`  | nests other options (explicit or by nesting)   |
+| `action` | executable task option                         |
+
+### Groups
+
+A group can be written explicitly with `"type": "group"` and an `"options"`
+object, or implicitly by simply nesting named options — both forms below are
+equivalent:
+
+```json
+"Network": {
+  "type": "group",
+  "options": {
+    "HOST": "localhost"
+  }
+}
+```
+
+```json
+"Network": {
+  "HOST": "localhost"
+}
+```
+
+Use the explicit form when the group itself needs metadata such as
+`dependencies` (which cascade to every child).
 
 ### Aliases
 
@@ -264,8 +325,8 @@ cfg.register_alias(
 
 ```text
 !ENABLE_FEATURE_A                     # logical NOT
-ENABLE_FEATURE_A && HOST=="dev"       # logical AND + comparison
-TIMEOUT>5 || HOST=="localhost"        # logical OR  + relational
+ENABLE_FEATURE_A && HOST==dev         # logical AND + comparison
+TIMEOUT>5 || HOST==localhost          # logical OR  + relational
 COUNT+5 > MAX_VALUE                   # addition + relational
 SIZE-1 >= MIN_SIZE                    # subtraction + comparison
 VALUE*2 == LIMIT                      # multiplication + equality

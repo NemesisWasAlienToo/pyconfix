@@ -1,11 +1,9 @@
 {
-    "name": "Extra Config",
-    "options": [
-      {
-        "name": "EXTRA_FEATURE",
-        "type": "bool",
-        "default": false
-      }
-    ]
+  "Extra Config": {
+    "EXTRA_FEATURE": {
+      "type": "bool",
+      "default": false
+    }
   }
+}
   

@@ -10,323 +10,10 @@ import curses
 import curses.textpad
 import os
 import textwrap
-from enum import StrEnum
+import sys
 
-# --- Utility Functions ---
-def tokenize(expression: str):
-    """Splits an expression string into tokens."""
-    i = 0
-    n = len(expression)
-    tokens = []
-    while i < n:
-        char = expression[i]
-        if char.isspace():
-            i += 1
-            continue
-        # Handle hexadecimal (0x) and binary (0b) prefixes
-        if char == '0' and i + 1 < n and expression[i+1].lower() in ('x', 'b'):
-            prefix = expression[i:i+2].lower()
-            start = i
-            i += 2
-            # Parse hex digits
-            if prefix == '0x':
-                while i < n and (expression[i].isdigit() or expression[i].lower() in 'abcdef'):
-                    i += 1
-            # Parse binary digits
-            elif prefix == '0b':
-                while i < n and expression[i] in '01':
-                    i += 1
-            tokens.append(expression[start:i])
-        # Numeric literal: digit or dot (with digit following)
-        elif char.isdigit() or (char == '.' and i + 1 < n and expression[i+1].isdigit()):
-            start = i
-            dot_count = 0
-            if char == '.':
-                dot_count += 1
-            i += 1
-            while i < n and (expression[i].isdigit() or (expression[i] == '.' and dot_count == 0)):
-                if expression[i] == '.':
-                    dot_count += 1
-                i += 1
-            tokens.append(expression[start:i])
-        elif char.isalpha() or char == '_':  # Identifier token
-            start = i
-            while i < n and (expression[i].isalnum() or expression[i] == '_'):
-                i += 1
-            tokens.append(expression[start:i])
-        elif char == "'":
-            start = i
-            i += 1
-            while i < n and expression[i] != "'":
-                i += 1
-            i += 1  # include closing quote
-            tokens.append(expression[start:i])
-        elif char in ('&', '|', '!', '=', '>', '<', '+', '-', '*', '/', '^', '%'):
-            # Check for two-character operators
-            if i + 1 < n and expression[i:i+2] in ('&&', '||', '==', '!=', '>=', '<=', '>>', '<<'):
-                tokens.append(expression[i:i+2])
-                i += 2
-            else:
-                tokens.append(char)
-                i += 1
-        elif char in ('(', ')'):
-            tokens.append(char)
-            i += 1
-        else:
-            raise ValueError(f"Unexpected character: {char}")
-    return tokens
-
-def shunting_yard(tokens, precedence=None):
-    """
-    Converts a list of tokens (in infix notation) to a postfix list.
-    Precedence mapping:
-      !   : 7
-      **  : 6 (power)
-      *, /, % : 5
-      +, - : 4
-      >>, <<, & : 3
-      ==, !=, >, <, >=, <= : 2
-      &&  : 1
-      ||, | : 0
-    """
-    if precedence is None:
-        precedence = {
-            '!': 7,
-            '**': 6,
-            '*': 5, '/': 5, '%': 5,
-            '+': 4, '-': 4,
-            '>>': 3, '<<': 3, '&': 3, '^': 3,
-            '==': 2, '!=': 2, '>': 2, '<': 2, '>=': 2, '<=': 2,
-            '&&': 1,
-            '||': 0, '|': 0,
-        }
-    right_associative = {'!', '**'}
-    output = []
-    operators = []
-    for token in tokens:
-        # Check if token is numeric, identifier, or a quoted string.
-        if token.replace('.', '', 1).isdigit() or token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
-            output.append(token)
-        elif token in precedence:
-            if token in right_associative:
-                while operators and operators[-1] != '(' and precedence[operators[-1]] > precedence[token]:
-                    output.append(operators.pop())
-            else:
-                while operators and operators[-1] != '(' and precedence[operators[-1]] >= precedence[token]:
-                    output.append(operators.pop())
-            operators.append(token)
-        elif token == '(':
-            operators.append(token)
-        elif token == ')':
-            while operators and operators[-1] != '(':
-                output.append(operators.pop())
-            if operators and operators[-1] == '(':
-                operators.pop()
-            else:
-                raise ValueError("Mismatched parentheses")
-    while operators:
-        op = operators.pop()
-        if op in ('(', ')'):
-            raise ValueError("Mismatched parentheses")
-        output.append(op)
-    return output
-
-class BooleanExpressionParser:
-    """
-    Evaluates boolean and arithmetic expressions using tokenizing,
-    postfix conversion, and evaluation routines.
-    """
-    def __init__(self, getter, enumerator=None):
-        self.getter = getter
-        self.enumerator = enumerator if enumerator is not None else {}
-
-    def eval_operator(self, op, right, left=None):
-        if op == '!':
-            return not bool(right)
-        elif op == '&&':
-            return bool(left) and bool(right)
-        elif op == '||':
-            return bool(left) or bool(right)
-        elif op == '==':
-            return left == right
-        elif op == '!=':
-            return left != right
-        elif op == '>':
-            return left > right
-        elif op == '<':
-            return left < right
-        elif op == '>=':
-            return left >= right
-        elif op == '<=':
-            return left <= right
-        elif op == '+':
-            return left + right
-        elif op == '-':
-            return left - right
-        elif op == '*':
-            return left * right
-        elif op == '/':
-            return left / right
-        elif op == '**':
-            return left ** right
-        elif op == '%':
-            return left % right
-        elif op == '&':
-            return left & right
-        elif op == '|':
-            return left | right
-        elif op == '^':
-            return left ^ right
-        elif op == '>>':
-            return left >> right
-        elif op == '<<':
-            return left << right
-        else:
-            raise ValueError(f"Unknown operator: {op}")
-
-    def evaluate_postfix(self, tokens):
-        """
-        Evaluates a postfix expression given:
-        - tokens: list of tokens in postfix order,
-        - operand_func: a function that returns the value for a given token,
-        - eval_operator: a function that applies an operator.
-        """
-        stack = []
-        for token in tokens:
-            if token == 'true':
-                stack.append(True)
-            elif token == 'false':
-                stack.append(False)
-            elif token.replace('.', '', 1).isdigit():
-                if '.' in token:
-                    stack.append(float(token))
-                else:
-                    stack.append(int(token))
-            # @TODO Optimize this, this can be done during tokenization
-            elif token.lower().startswith('0x'):
-                stack.append(int(token, 16))
-            elif token.lower().startswith('0b'):
-                stack.append(int(token, 2))
-            elif token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
-                if token.startswith("'") and token.endswith("'"):
-                    stack.append(token[1:-1])
-                else:
-                    stack.append(self.getter(token))
-            else:
-                if token == '!':
-                    if not stack:
-                        raise ValueError("Missing operand for '!'")
-                    right = stack.pop()
-                    stack.append(self.eval_operator(token, right))
-                else:
-                    if len(stack) < 2:
-                        raise ValueError(f"Missing operands for '{token}'")
-                    right = stack.pop()
-                    left = stack.pop()
-                    stack.append(self.eval_operator(token, right, left))
-        if len(stack) != 1:
-            raise ValueError("Invalid expression: extra items remain on the stack")
-        return stack[0]
-
-class ConfigOptionType(StrEnum):
-    BOOL = "bool"
-    INT = "int"
-    STRING="string"
-    ENUM = "enum"
-    ACTION= "action"
-    GROUP = "group"
-    EXTERNAL = "external"
-
-class ConfigOption:
-    def __init__(self, name, option_type:ConfigOptionType, default=None, external=None, data=None, description="",
-                 dependencies="", options=None, choices=None, expanded=False, requires=None):
-        if any(c.isspace() for c in name):
-            raise ValueError(f"Option name cannot contain white space: {name}")
-        
-        # For custom types from python API, user can jsut create factory functions
-        # no fancy custom type detection is needed
-        try:
-            option_type = ConfigOptionType(option_type)
-        except Exception:
-            raise ValueError(f"Option '{name}' has an invalid type '{option_type}'")
-        
-        if option_type == ConfigOptionType.ENUM:
-            if len(choices or []) < 1:
-                raise ValueError(f"Multiple choice option {name} must have at least one choice")
-            if default not in (choices or []):
-                default = choices[0]
-            if any(' ' in choice for choice in (choices or [])):
-                raise ValueError(f"Choice names cannot contain white space: in option {name}")
-
-        if option_type == ConfigOptionType.ACTION and not callable(default):
-            raise ValueError(f"Action option {name} must have a callable default value")
-
-        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and requires:
-            raise ValueError(f"The 'requires' parameter is only valid for action and group options, not {option_type} options")
-        
-        if requires:
-            if not callable(requires):
-                raise ValueError(f"Requires for option {name} must be a callable")
-
-        if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
-            raise ValueError(f"Group option {name} must have a list of options")
-
-        if option_type == ConfigOptionType.ENUM and not isinstance(choices, list):
-            raise ValueError(f"Multiple choice option {name} must have a list of choices")
-
-        if option_type == ConfigOptionType.EXTERNAL and dependencies:
-            raise ValueError(f"External option {name} cannot have dependencies or evaluator")
-
-        self.name = name
-        self.option_type = option_type
-        self.default = default
-        self.value = choices.index(default) if (option_type == ConfigOptionType.ENUM) else default
-        self.external = external or False
-        self.data = data
-        self.description = description
-        self.dependencies = dependencies
-        self.options = options or []
-        self.choices = choices or []
-        self.expanded = expanded
-        self.requires = requires
-
-        if dependencies and not callable(dependencies):
-            self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'type': self.option_type,
-            'default': self.default,
-            'external': self.external,
-            'data': self.data,
-            'description': self.description,
-            'dependencies': self.dependencies,
-            'options': [opt.to_dict() for opt in self.options],
-            'choices': self.choices,
-            'requires': self.requires,
-        }
-    
-    def clone_with(self, **kwargs):
-        """
-        This method creates a copy of the current instance and updates its attributes with the values 
-        specified in the keyword arguments.
-        """
-        params = {
-            'name': self.name,
-            'option_type': self.option_type,
-            'default': self.default,
-            'external': self.external,
-            'data': self.data,
-            'description': self.description,
-            'dependencies': self.dependencies,
-            'options': self.options,
-            'choices': self.choices,
-            'expanded': self.expanded,
-            'requires': self.requires,
-        }
-        params.update(kwargs)
-        return ConfigOption(**params)
+from .parser import *
+from .option import *
 
 class pyconfix:
     def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json",
@@ -356,7 +43,7 @@ class pyconfix:
 
         existing = self.aliases.get(alias_option.name)
         if existing:
-            if skip_duplicate_check:
+            if not skip_duplicate_check:
                 raise ValueError(f"Alias '{alias_option.name}' already exists")
             else:
                 return existing
@@ -431,11 +118,11 @@ class pyconfix:
         while True:
             stdscr.clear()
             max_y, _ = stdscr.getmaxyx()
+            display_limit = max(1, max_y - 3)
             if max_y > 2:
                 stdscr.addstr(max_y - 2, 2, "Press 'q' to return to the menu or UP/DOWN to scroll")
 
             if max_y >= 4:
-                display_limit = max_y - 3
                 for idx, line in enumerate(help_text[start_index:start_index + display_limit]):
                     stdscr.addstr(idx + 1, 2, line)
             
@@ -463,57 +150,32 @@ class pyconfix:
 
     def _is_option_available(self, option):
         def _is_option_available_impl(option, root):
-            def getter_function_impl(key, options_list):
-                key_upper = key.upper()
-                if key_upper == root:
-                    raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
-                for opt in options_list:
-                    if opt.option_type == ConfigOptionType.GROUP:
-                        found, value = getter_function_impl(key, opt.options)
-                        if found:
-                            return True, value
-                    # Compare names in a case-insensitive manner.
-                    elif opt.name.upper() == key_upper:
-                        if not _is_option_available_impl(opt, root):
-                            return True, False
-                        default_value = opt.default
-                        if opt.option_type == ConfigOptionType.ENUM:
-                            default_value = opt.choices.index(opt.default)
-                            return True, opt.choices[opt.value] if opt.value is not None else default_value
-                        return True, opt.value if opt.value is not None else default_value
-                    # If an enum value being parsed as key instead of a key name
-                    elif opt.option_type == ConfigOptionType.ENUM:
-                        for choice in opt.choices:
-                            if choice.upper() == key_upper:
-                                return True, key
-                return False, None
-
-            def getter_function(key):
-                found, value = getter_function_impl(key, self.options)
-                if not found:
-                    raise ValueError(f"Invalid token: {key}")
-                return value
-
             if not option.dependencies:
                 return True
-            if callable(option.dependencies):
-                return option.dependencies(self)
-            else:
-                parser = BooleanExpressionParser(getter=getter_function)
-                return parser.evaluate_postfix(option.postfix_dependencies)
+            if not callable(option.dependencies): raise ValueError('Not callable dependencies')
+            return option.dependencies(self)
         return _is_option_available_impl(option, option.name)
+
+    def _sync_option_value(self, option, available):
+        """Keep an option's value in sync with its availability.
+
+        Disabling an option blanks its value; re-enabling restores it from the
+        default. This must run wherever availability is (re)evaluated so the
+        bookkeeping stays correct in both the normal and search views.
+        """
+        if not available:
+            if option.option_type != ConfigOptionType.GROUP:
+                option.value = None
+        elif option.value is None:
+            option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
 
     def _flatten_options(self, options, depth=0):
         flat_options = []
         for option in options:
-            if not self._is_option_available(option):
-                if option.option_type != ConfigOptionType.GROUP:
-                    option.value = None
-                if not self.show_disabled:
-                    continue
-            else:
-                if option.value is None:
-                    option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
+            available = self._is_option_available(option)
+            self._sync_option_value(option, available)
+            if not available and not self.show_disabled:
+                continue
             flat_options.append((option, depth))
             if option.option_type == ConfigOptionType.GROUP and option.expanded:
                 flat_options.extend(self._flatten_options(option.options, depth + 1))
@@ -522,15 +184,18 @@ class pyconfix:
     def _search_options(self, options, query, depth=0):
         flat_options = []
         for option in options:
-            if self.show_disabled or self._is_option_available(option):
+            available = self._is_option_available(option)
+            self._sync_option_value(option, available)
+            if self.show_disabled or available:
                 if option.option_type == ConfigOptionType.GROUP:
+                    option.expanded = True
+                if query.lower() in option.name.lower():
+                    flat_options.extend(self._flatten_options([option], depth))
+                elif option.option_type == ConfigOptionType.GROUP:
                     nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
-                        option.expanded = True
                         flat_options.append((option, depth))
                         flat_options.extend(nested_options)
-                elif query.lower() in option.name.lower():
-                    flat_options.append((option, depth))
         return flat_options
     
     def _description_page(self, stdscr, option):
@@ -540,6 +205,7 @@ class pyconfix:
             stdscr.border(0)
             stdscr.addstr(0, 2, f" {option.name} ")
             max_y, max_x = stdscr.getmaxyx()
+            display_limit = max(1, max_y - 3)
 
             content = [
                 "",
@@ -561,7 +227,6 @@ class pyconfix:
                     wrapped_content.extend(textwrap.wrap(line, max_x - 4))
 
             if max_y >= 4:
-                display_limit = max_y - 3
                 for idx, line in enumerate(wrapped_content[start_index:start_index + display_limit]):
                     stdscr.addstr(idx + 1, 2, line)
             
@@ -585,7 +250,9 @@ class pyconfix:
             indicator = "[+]" if option.option_type == ConfigOptionType.GROUP and not option.expanded else "[-]" if option.option_type == ConfigOptionType.GROUP else ""
             name = f"{indicator} {option.name}" if option.option_type == ConfigOptionType.GROUP else option.name
             value = ""
-            if option.external:
+            if option.option_type == ConfigOptionType.EXTERNAL:
+                if callable(option.default):
+                    option.value = option.default()
                 value = f"{option.value} [external]"
             elif option.value is None and option.option_type != ConfigOptionType.GROUP:
                 value = "[disabled]"
@@ -744,7 +411,7 @@ class pyconfix:
         # If value is None, the option is diasabled, skip
         if selected_option.value is None:
             return
-        if selected_option.external:
+        if selected_option.option_type == ConfigOptionType.EXTERNAL:
             return
         if selected_option.option_type == ConfigOptionType.BOOL:
             selected_option.value = not selected_option.value
@@ -923,7 +590,9 @@ class pyconfix:
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
-                default_value = option.default if option.option_type != ConfigOptionType.ENUM else option.choices.index(option.default)
+                # option.default is the choice string for enums, so this emits a
+                # string for the disabled/None path just like the active path below.
+                default_value = option.default
                 value_to_save = default_value if option.value is None else (
                     option.choices[option.value] if option.option_type == ConfigOptionType.ENUM
                     else option.value)
@@ -971,7 +640,7 @@ class pyconfix:
             def get(self):
                 return self.group
 
-            def action_option(self, name=None, dependencies="", requires=""):
+            def action_option(self, name=None, dependencies=None, requires=None):
                 def decorator(func):
                     option_name = name or func.__name__
                     new_option = ConfigOption(
@@ -991,60 +660,130 @@ class pyconfix:
             return GroupProxy(self)
         
     def _parse_file(self, filepath):
-        if not os.path.exists(filepath):
-            print(f"Config file '{filepath}' does not exist.")
-            exit(1)
+        if not os.path.exists(filepath): sys.exit(f"Config file '{filepath}' does not exist.")
         with open(filepath, 'r') as f:
             config_data = json.load(f)
-            self.config_name = config_data.get('name', 'Configuration')
-            self.options += self._parse_options(config_data.get('options', {}))
-            
-            # Handle includes relative to current file
+            if (len(config_data.keys()) != 1): sys.exit(f"Json file {filepath} has more than one top entry")
+
             base_path = os.path.dirname(os.path.abspath(filepath))
-            for include_file in config_data.get('include', []):
-                include_path = os.path.join(base_path, include_file)
-                if not os.path.exists(include_path):
-                    raise ValueError(f"File {filepath} includes a non-existing file: {include_path}")
-                self._parse_file(include_path)
+            self.config_name, value = next(iter(config_data.items()))
+            self.options += self._parse_options(value, base_path)
 
     # @TODO: Fix callable group dependencies
-    def _parse_options(self, options_data):
+    def _parse_options(self, options_data, base_path):
         parsed_options = []
-        for option_data in options_data:
-            option: ConfigOption
-            option_type_name = option_data['type']
-            name = option_data['name']
-            option = ConfigOption(
-                name=name,
-                option_type=ConfigOptionType.STRING,
-                default=option_data.get('default'),
-                description=option_data.get('description'),
-                data=option_data.get('data'),
-                dependencies=option_data.get('dependencies', ""),
-                requires=option_data.get('requires', ""),
-                choices=option_data.get('choices', []),
-                expanded=self.expanded,
-                options=[]
-            )
-            try:
-                option.option_type = ConfigOptionType(option_type_name)
-            except ValueError:
-                custom_type = self.aliases.get(option_type_name)
-                if custom_type is None:
-                    raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
-
-                option = custom_type.clone_with(
-                    name=name,
-                    default=option_data.get('default', custom_type.default),
-                    description=option_data.get('description', custom_type.description),
-                    dependencies=option_data.get('dependencies', custom_type.dependencies),
-                )
-            if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
-                option.options = self._parse_options(option_data['options'])
-            elif option.option_type == ConfigOptionType.ENUM:
-                option.value = option.choices.index(option.default)
-            parsed_options.append(option)
+        for key, value in options_data.items():
+            if key == 'include':
+                # Handle includes relative to current file
+                for include_file in value:
+                    include_path = os.path.join(base_path, include_file)
+                    if not os.path.exists(include_path):
+                        raise ValueError(f"A non-existing file was included: {include_path}")
+                    self._parse_file(include_path)
+            else:
+                parsed_options.append(self._parse_option(key, value, base_path))
         return parsed_options
+    
+    def _parse_option(self, name, option_data, base_path):
+
+        if not isinstance(option_data, dict):
+            if isinstance(option_data, list):
+                option_data = {'choices': option_data}
+            else:
+                option_data = {'default': option_data}
+
+        option_type_name = ''
+        def_value = option_data.get('default', None)
+        if 'type' in option_data:
+            option_type_name = option_data['type']
+        elif 'choices' in option_data:
+            def_value = def_value or option_data['choices'][0]
+            option_type_name = ConfigOptionType.ENUM
+        elif isinstance(def_value, bool):
+            option_type_name = ConfigOptionType.BOOL
+        elif isinstance(def_value, int):
+            option_type_name = ConfigOptionType.INT
+        elif isinstance(def_value, str):
+            option_type_name = ConfigOptionType.STRING
+        elif 'options' in option_data:
+            option_type_name = ConfigOptionType.GROUP
+            option_data = {'options': option_data}
+        else:
+            option_type_name = ConfigOptionType.GROUP
+            option_data = {'options': option_data}
+
+        option = ConfigOption(
+            name=name,
+            option_type=ConfigOptionType.STRING,
+            default=option_data.get('default', def_value),
+            description=option_data.get('description'),
+            data=option_data.get('data'),
+            dependencies=option_data.get('dependencies', ""),
+            requires=option_data.get('requires', ""),
+            choices=option_data.get('choices', []),
+            expanded=self.expanded,
+            options=[]
+        )
+        try:
+            option.option_type = ConfigOptionType(option_type_name)
+        except ValueError:
+            custom_type = self.aliases.get(option_type_name)
+            if custom_type is None:
+                raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
+
+            option = custom_type.clone_with(
+                name=name,
+                default=option_data.get('default', custom_type.default),
+                # default=option_data.get('default', def_value),
+                description=option_data.get('description', custom_type.description),
+                dependencies=option_data.get('dependencies', custom_type.dependencies),
+            )
+        if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
+            option.options = self._parse_options(option_data['options'], base_path)
+        elif option.option_type == ConfigOptionType.ENUM:
+            option.value = option.choices.index(option.default)
+        
+        def _is_option_available_impl(option, root):
+            def getter_function_impl(key, options_list):
+                key_upper = key.upper()
+                if key_upper == root:
+                    raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
+                for opt in options_list:
+                    if opt.option_type == ConfigOptionType.GROUP:
+                        found, value = getter_function_impl(key, opt.options)
+                        if found:
+                            return True, value
+                    # Compare names in a case-insensitive manner.
+                    elif opt.name.upper() == key_upper:
+                        if not _is_option_available_impl(opt, root):
+                            return True, False
+                        default_value = opt.default
+                        if opt.option_type == ConfigOptionType.ENUM:
+                            default_value = opt.choices.index(opt.default)
+                            return True, opt.choices[opt.value] if opt.value is not None else default_value
+                        return True, opt.value if opt.value is not None else default_value
+                    # If an enum value being parsed as key instead of a key name
+                    elif opt.option_type == ConfigOptionType.ENUM:
+                        for choice in opt.choices:
+                            if choice.upper() == key_upper:
+                                return True, key
+                return False, None
+
+            def getter_function(key):
+                found, value = getter_function_impl(key, self.options)
+                if not found:
+                    raise ValueError(f"Invalid token: {key}")
+                return value
+
+            if not option.dependencies:
+                return lambda x: True
+            if callable(option.dependencies):
+                return lambda x:option.dependencies(x)
+            else:
+                parser = BooleanExpressionParser(getter=getter_function)
+                return lambda x:parser.evaluate_postfix(option.postfix_dependencies)
+        option.dependencies = _is_option_available_impl(option, option.name)
+        return option
 
     def load_schem(self, schem_files):
         """
@@ -1061,20 +800,15 @@ class pyconfix:
             if b is None:
                 return a
             
-            if not callable(a) and not callable(b):
-                return b + (" && " if b and a else "") + a
-            elif callable(a) and callable(b):
-                return lambda x: a(x) and b(x)
-            else:
-                raise ValueError("Cannot mix callable and non-callable in a group's dependencies and requires")
+            if not callable(a) or not callable(b):
+                raise ValueError("Combining non-callable")
+            return lambda x: a(x) and b(x)
 
         def cascade_group(options, group_dependencies = None, group_requires = None):
             """Cascade dependencies and requires from groups to their options."""
             for opt in options:
                 if group_dependencies:
                     opt.dependencies = combine(group_dependencies, opt.dependencies)
-                    # @TODO: Maybe mix this somehow with the constructor or remove the one there
-                    opt.postfix_dependencies = shunting_yard(tokenize(opt.dependencies))
                 if group_requires:
                     opt.requires = combine(group_requires, opt.requires)
                 if opt.option_type == ConfigOptionType.GROUP:
@@ -1151,7 +885,7 @@ class pyconfix:
         if graphical:
             self.run_main_loop()
 
-    def action_option(self, name=None, dependencies="", requires=""):
+    def action_option(self, name=None, dependencies=None, requires=None):
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
@@ -1161,14 +895,14 @@ class pyconfix:
         """
         return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
 
-    def group_option(self, name, dependencies=""):
+    def group_option(self, name, dependencies=None):
         """
         Create an option group.
         :param name: Group name.
         :param dependencies: Optional dependency expression or function.
         :return: GroupProxy object for adding action options.
         Usage:
-            group = config.group_option("my_group", dependencies="some_option")
+            group = config.group_option("my_group", dependencies=None)
             
             @group.action_option()
             def my_action(config):

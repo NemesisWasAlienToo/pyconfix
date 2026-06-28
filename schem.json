@@ -1,92 +1,106 @@
 {
-    "name": "Main Config",
-    "options": [
-        {
-            "name": "ENABLE_FEATURE_A",
+    "Main Config": {
+        "ENABLE_FEATURE_A": {
             "type": "bool",
             "default": true,
             "description" : "Enables the feature A and feature B. Tesssssssssssssssssssssssssssssssssssting a long description.",
             "data": ["WIN32"]
         },
-        {
-            "name": "DISABLED_BY_DEFAULT",
+        "SHORT_BOOL_TYPE_DEDUCED": false,
+        "BOOL_TYPE_DEDUCED": {
+            "default": false
+        },
+        "SHORT_INT_TYPE_DEDUCED": 10,
+        "INT_TYPE_DEDUCED": {
+            "default": 10
+        },
+        "SHORT_STRING_TYPE_DEDUCED": "Hello there",
+        "STRING_TYPE_DEDUCED": {
+            "default": "Hello there"
+        },
+        "SHORT_ENUM_TYPE_DEDUCED": ["DEBUG", "INFO", "WARN", "ERROR"],
+        "ENUM_TYPE_DEDUCED": {
+            "default": "ERROR",
+            "choices": ["DEBUG", "INFO", "WARN", "ERROR"]
+        },
+        "POWER_TEST": {
+            "default": true,
+            "dependencies": "INT_TYPE_DEDUCED**2 < 10"
+        },
+        "DISABLED_BY_DEFAULT": {
             "type": "bool",
             "default": false
         },
-        {
-            "name": "LINUX_MODULE",
+        "LINUX_MODULE": {
             "type": "tri-state",
             "default": "DISABLED"
         },
-        {
-            "name": "LOG_LEVEL",
+        "LOG_LEVEL": {
             "type": "enum",
             "default": "DEBUG",
             "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
             "dependencies": "ENABLE_FEATURE_A"
         },
-        {
-            "name": "INTERMEDIATE_OPTION",
+        "INTERMEDIATE_OPTION": {
             "type": "bool",
             "default": true,
             "dependencies": "ENABLE_FEATURE_A"
         },
-        {
-            "name": "DEPENDS_ON_A_B",
+        "DEPENDS_ON_A_B": {
             "type": "int",
             "default": 0,
             "description" : "Enables the feature A and feature B. Tesssssssssssssssssssssssssssssssssssting a long description.",
             "dependencies": "ENABLE_FEATURE_A && (LOG_LEVEL==INFO || LOG_LEVEL==DEBUG) && !INTERMEDIATE_OPTION && (DOMAIN_ADDRESS=='localhost' || DOMAIN_ADDRESS=='hi')"
         },
-        {
-            "name": "HEAP_SIZE",
+        "HEAP_SIZE": {
             "type": "int",
             "default": 10,
             "dependencies": "ENABLE_FEATURE_A"
         },
-        {
-            "name": "STACK_SIZE",
+        "STACK_SIZE": {
             "type": "int",
             "default": 10,
             "dependencies": "ENABLE_FEATURE_A"
         },
-        {
-            "name": "MEMORY_SIZE",
+        "MEMORY_SIZE": {
             "type": "int",
             "default": 0,
             "dependencies": "ENABLE_FEATURE_A"
         },
-        {
-            "name": "DOMAIN_ADDRESS",
+        "DOMAIN_ADDRESS": {
             "type": "string",
             "default": "localhost",
             "dependencies": "ENABLE_FEATURE_A && ((MEMORY_SIZE & 0xF) == 0xE)"
         },
-        {
-            "name": "GROUP_1",
+        "GROUP_1": {
             "type": "group",
             "dependencies": "ENABLE_FEATURE_A && ((STACK_SIZE + HEAP_SIZE) <= MEMORY_SIZE)",
-            "options": [
-                {
-                    "name": "SUB_B",
+            "options": {
+                "SUB_B": {
                     "type": "bool",
                     "default": false
                 },
-                {
-                    "name": "GROUP_2",
-                    "type": "group",
-                    "options": [
-                        {
-                            "name": "SUB_C",
+                "GROUP_3": {
+                    "options": {
+                        "SUB_C": {
                             "type": "bool",
                             "default": false
                         }
-                    ]
+                    }
                 }
-            ]
-        }
-    ],
-    "include": [
-        "extra_schem.json"
-    ]
+            }
+        },
+        "GROUP_4": {
+            "SUB_B": {
+                "type": "bool",
+                "default": false
+            },
+            "GROUP_5": {
+                "SUB_C": false
+            }
+        },
+        "include": [
+            "extra_schem.json"
+        ]
+    }
 }

@@ -36,11 +36,6 @@ def create_config():
             default=platform.system()
         ),
         ConfigOption(
-            name='OS_LIVE',
-            option_type=ConfigOptionType.EXTERNAL,
-            default=lambda: platform.system()
-        ),
-        ConfigOption(
             name='PYTHON_EVALUATED',
             option_type=ConfigOptionType.EXTERNAL,
             default=".".join(map(str, sys.version_info[:3]))

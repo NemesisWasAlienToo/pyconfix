@@ -251,8 +251,6 @@ class pyconfix:
             name = f"{indicator} {option.name}" if option.option_type == ConfigOptionType.GROUP else option.name
             value = ""
             if option.option_type == ConfigOptionType.EXTERNAL:
-                if callable(option.default):
-                    option.value = option.default()
                 value = f"{option.value} [external]"
             elif option.value is None and option.option_type != ConfigOptionType.GROUP:
                 value = "[disabled]"
@@ -619,13 +617,12 @@ class pyconfix:
         def get_impl(key, options_list=self.options):
             key_upper = key.upper()
             for opt in options_list:
+                if opt.name.upper() == key_upper:
+                    return True, opt
                 if opt.option_type == ConfigOptionType.GROUP:
                     found, value = get_impl(key, opt.options)
                     if found:
                         return True, value
-                # Compare names in a case-insensitive manner.
-                elif opt.name.upper() == key_upper:
-                    return True, opt
             return False, None
         found, value = get_impl(key)
         if not found:
@@ -685,7 +682,6 @@ class pyconfix:
         return parsed_options
     
     def _parse_option(self, name, option_data, base_path):
-
         if not isinstance(option_data, dict):
             if isinstance(option_data, list):
                 option_data = {'choices': option_data}
@@ -707,7 +703,6 @@ class pyconfix:
             option_type_name = ConfigOptionType.STRING
         elif 'options' in option_data:
             option_type_name = ConfigOptionType.GROUP
-            option_data = {'options': option_data['options']}
         else:
             option_type_name = ConfigOptionType.GROUP
             option_data = {'options': option_data}

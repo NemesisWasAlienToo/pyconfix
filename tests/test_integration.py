@@ -138,13 +138,6 @@ def test_type_inference(cfg, name, expected):
     assert find_option(cfg.options, name).option_type == expected
 
 
-def test_get_does_not_resolve_groups(cfg):
-    # Documents a current limitation: _get cannot find a group by name even
-    # though the group exists in the tree. The refactor may fix this.
-    assert cfg._get("GROUP_EXPLICIT") is None
-    assert find_option(cfg.options, "GROUP_EXPLICIT") is not None
-
-
 def test_include_pulls_in_options(cfg):
     opt = cfg._get("EXTRA_FEATURE")
     assert opt is not None

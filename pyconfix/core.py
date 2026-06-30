@@ -858,11 +858,15 @@ class pyconfix:
     def get(self, key, default=None):
         """
         Get an option by its name.
+
+        Unknown keys should behave like a safe lookup and return the provided
+        fallback value instead of raising an AttributeError.
         """
-        value = self.__getattr__(key)
-        if value is None:
+        try:
+            return self.__getattr__(key)
+        except AttributeError:
             return default
-        return value
+
     
     def run_main_loop(self):
         """

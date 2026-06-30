@@ -707,7 +707,7 @@ class pyconfix:
             option_type_name = ConfigOptionType.STRING
         elif 'options' in option_data:
             option_type_name = ConfigOptionType.GROUP
-            option_data = {'options': option_data}
+            option_data = {'options': option_data['options']}
         else:
             option_type_name = ConfigOptionType.GROUP
             option_data = {'options': option_data}

@@ -73,7 +73,6 @@
             "dependencies": "ENABLE_FEATURE_A && ((MEMORY_SIZE & 0xF) == 0xE)"
         },
         "GROUP_1": {
-            "type": "group",
             "dependencies": "ENABLE_FEATURE_A && ((STACK_SIZE + HEAP_SIZE) <= MEMORY_SIZE)",
             "options": {
                 "SUB_B": {

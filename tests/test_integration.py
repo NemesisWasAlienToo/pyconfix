@@ -1,21 +1,17 @@
-"""End-to-end characterization tests for the pyconfix facade.
+"""End-to-end tests across the layered design (runner -> core -> serializer).
 
-These exercise the full pipeline (schema load -> dependency compile -> config
-apply -> dump/diff/get/actions) WITHOUT the curses TUI, by running headless
-(``graphical=False``). They are written against the current behavior on purpose:
-they form the safety net the module split must keep green.
-
-Where the current behavior is a known bug that the refactor intends to fix, the
-test asserts the *desired* behavior and is marked ``xfail`` with a reason, so the
-suite stays green now and the marker can be dropped once the fix lands.
+These drive the public ``pyconfix`` runner through the full pipeline (schema
+load -> dependency compile -> config apply -> dump/diff/get/actions) headless
+(``graphical=False``), i.e. without the curses TUI. They are the integration
+safety net; per-module behavior is covered in test_core / test_serializer /
+test_parser / test_option.
 """
 
 import json
-import os
 
 import pytest
 
-from pyconfix import pyconfix, ConfigOption, ConfigOptionType
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, serializer
 
 
 # --------------------------------------------------------------------------- #
@@ -100,23 +96,6 @@ def cfg(make_config):
     return make_config()
 
 
-def find_option(options, name):
-    """Recursively locate an option by name, groups included.
-
-    ``pyconfix._get`` only descends into groups and never matches a group by its
-    own name, so it returns ``None`` for groups; this helper does not, letting us
-    assert on the parsed tree directly.
-    """
-    for opt in options:
-        if opt.name == name:
-            return opt
-        if opt.option_type == ConfigOptionType.GROUP:
-            found = find_option(opt.options, name)
-            if found is not None:
-                return found
-    return None
-
-
 # --------------------------------------------------------------------------- #
 # Schema loading & type inference
 # --------------------------------------------------------------------------- #
@@ -130,12 +109,12 @@ def find_option(options, name):
     ("OBJ_ENUM", ConfigOptionType.ENUM),
     ("GROUP_EXPLICIT", ConfigOptionType.GROUP),
     ("GROUP_IMPLICIT", ConfigOptionType.GROUP),
-    ("NESTED", ConfigOptionType.GROUP),
+    ("NESTED", ConfigOptionType.GROUP),      # nested group, resolved by _get
     ("TRI", ConfigOptionType.ENUM),
     ("OS", ConfigOptionType.EXTERNAL),
 ])
 def test_type_inference(cfg, name, expected):
-    assert find_option(cfg.options, name).option_type == expected
+    assert cfg._get(name).option_type == expected
 
 
 def test_include_pulls_in_options(cfg):
@@ -298,7 +277,7 @@ def test_in_session_action_returns_bare_value(cfg):
 # --------------------------------------------------------------------------- #
 
 def test_write_config_roundtrip(cfg, tmp_path):
-    cfg._write_config(output_diff=False)
+    serializer.write_config(cfg, output_diff=False)
     written = json.loads((tmp_path / "out.json").read_text())
     assert written == cfg.dump()
 
@@ -318,7 +297,7 @@ def test_save_func_is_invoked(make_config, tmp_path, monkeypatch):
     cfg.register_alias(name="tri-state", option_type=ConfigOptionType.ENUM,
                        choices=["INTEGRATED", "MODULE", "DISABLED"])
     cfg.run(graphical=False)
-    cfg._write_config(output_diff=True)
+    serializer.write_config(cfg, output_diff=True)
 
     assert len(calls) == 1
     assert calls[0][1] is True

@@ -1,5 +1,5 @@
 import argparse
-from .core import pyconfix
+from .runner import pyconfix
 
 VERSION = "0.10.6"
 

@@ -7,11 +7,11 @@
 
 """Curses front-end for pyconfix.
 
-Owns all terminal interaction. A :class:`Tui` is driven by a core manager
-(``app``) and reaches back into it for every piece of logic — building the
-visible list, availability, toggling/collapsing, executing actions — and calls
-the serializer to persist. Importing this module is the only place that pulls in
-curses, so core/serializer/runner stay usable headless.
+Owns all terminal interaction, including the keybindings. A :class:`Tui` is
+driven by the runner (``app``) and reaches back into it for every piece of logic
+— building the visible list, availability, toggling/collapsing, executing
+actions, and persisting via ``app.save``. Importing this module is the only place
+that pulls in curses, so core/serializer/runner stay usable headless.
 """
 
 import curses
@@ -23,6 +23,16 @@ from .option import ConfigOptionType
 
 
 class Tui:
+    # Keybindings are a terminal concern and live here.
+    save_key = ord('s')
+    save_diff_key = ord('d')
+    quite_key = ord('q')
+    collapse_key = ord('c')
+    search_key = ord('/')
+    help_key = ord('h')
+    abort_key = 1  # Ctrl+A
+    description_key = 4  # Ctrl+D
+
     def __init__(self, app, output_file, show_disabled=False, save_func=None):
         self.app = app
         self.output_file = output_file
@@ -41,22 +51,22 @@ class Tui:
              "Keybindings:",
              "  Navigate                  : Arrow Up/Down",
              "  Select/Toggle option      : Enter",
-            f"  Save configuration        : {curses.keyname(app.save_key).decode()}",
-            f"  Save diff configuration   : {curses.keyname(app.save_diff_key).decode()}",
-            f"  Quit                      : {curses.keyname(app.quite_key).decode()}",
-            f"  Collapse/Expand group     : {curses.keyname(app.collapse_key).decode()}",
-            f"  Search                    : {curses.keyname(app.search_key).decode()}",
-            f"  Show help page            : {curses.keyname(app.help_key).decode()}",
-            f"  Show description          : {curses.keyname(app.description_key).decode()}",
-            f"  Exit search               : {curses.keyname(app.abort_key).decode()}",
-            f"  Exit input box            : {curses.keyname(app.abort_key).decode()}",
+            f"  Save configuration        : {curses.keyname(self.save_key).decode()}",
+            f"  Save diff configuration   : {curses.keyname(self.save_diff_key).decode()}",
+            f"  Quit                      : {curses.keyname(self.quite_key).decode()}",
+            f"  Collapse/Expand group     : {curses.keyname(self.collapse_key).decode()}",
+            f"  Search                    : {curses.keyname(self.search_key).decode()}",
+            f"  Show help page            : {curses.keyname(self.help_key).decode()}",
+            f"  Show description          : {curses.keyname(self.description_key).decode()}",
+            f"  Exit search               : {curses.keyname(self.abort_key).decode()}",
+            f"  Exit input box            : {curses.keyname(self.abort_key).decode()}",
              "",
              "How it works:",
              "  - Use the arrow keys to navigate through the options.",
              "  - Press Enter to select or toggle an option.",
              "  - Options that depend on other options will be shown or hidden based on their dependencies.",
              "  - Use the search function to quickly find options by name.",
-            f"  - Collapse/Expand groups : {curses.keyname(app.collapse_key).decode()}",
+            f"  - Collapse/Expand groups : {curses.keyname(self.collapse_key).decode()}",
              ""
         ]
 
@@ -81,7 +91,7 @@ class Tui:
             elif key == curses.KEY_RESIZE:
                 max_y, _ = stdscr.getmaxyx()
                 display_limit = max_y - 2
-            elif key == ord('q') or key == self.app.abort_key:
+            elif key == ord('q') or key == self.abort_key:
                 break
 
     def _description_page(self, stdscr, option):
@@ -222,7 +232,7 @@ class Tui:
             stdscr.addstr(0, 2, f" {app.config_name or 'Unnamed'} ")
             max_y, max_x = stdscr.getmaxyx()
             if not search_mode and max_y > 2:
-                info = f"'{curses.keyname(app.quite_key).decode()}': Exit, '{curses.keyname(app.save_key).decode()}': Save, '{curses.keyname(app.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(app.help_key).decode()}': Help"
+                info = f"'{curses.keyname(self.quite_key).decode()}': Exit, '{curses.keyname(self.save_key).decode()}': Save, '{curses.keyname(self.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(self.help_key).decode()}': Help"
                 stdscr.addstr(max_y - 2, 2, info[:max_x - 5])
 
             flat_options = self._search_options(app.options, search_query) if search_mode else self._flatten_options(app.options)
@@ -240,7 +250,7 @@ class Tui:
                 if max_y > 3:
                     stdscr.addstr(max_y - 3, 2, f"Search: {search_query}")
                 if max_y > 2:
-                    stdscr.addstr(max_y - 2, 2, f"Press {curses.keyname(app.abort_key).decode()} to abort search")
+                    stdscr.addstr(max_y - 2, 2, f"Press {curses.keyname(self.abort_key).decode()} to abort search")
             stdscr.refresh()
             key = stdscr.getch()
             if key == curses.KEY_RESIZE:
@@ -248,7 +258,7 @@ class Tui:
             if search_mode:
                 if key in (curses.KEY_BACKSPACE, 127):
                     search_query = search_query[:-1]
-                elif key == app.abort_key:
+                elif key == self.abort_key:
                     stdscr.timeout(100)
                     if stdscr.getch() == -1:
                         search_mode, search_query = False, ""
@@ -262,7 +272,7 @@ class Tui:
                         current_row += 1
                 elif key in (curses.KEY_ENTER, 10, 13):
                     self._handle_enter(flat_options, current_row, stdscr, search_mode)
-                elif key == app.description_key:
+                elif key == self.description_key:
                     selected_option, _ = flat_options[current_row]
                     self._description_page(stdscr, selected_option)
             else:
@@ -277,19 +287,19 @@ class Tui:
                             start_index += 1
                 elif key in (curses.KEY_ENTER, 10, 13):
                     self._handle_enter(flat_options, current_row, stdscr, search_mode)
-                elif key == app.save_key:
+                elif key == self.save_key:
                     self._save_config(stdscr, False)
-                elif key == app.save_diff_key:
+                elif key == self.save_diff_key:
                     self._save_config(stdscr, True)
-                elif key == app.quite_key or key == app.abort_key:
+                elif key == self.quite_key or key == self.abort_key:
                     break
-                elif key == app.collapse_key:
+                elif key == self.collapse_key:
                     current_row = self._collapse_current_group(flat_options, current_row, search_mode)
-                elif key == app.search_key:
+                elif key == self.search_key:
                     search_mode, search_query, current_row = True, "", 0
-                elif key == app.help_key:
+                elif key == self.help_key:
                     self._show_help(stdscr)
-                elif key == app.description_key:
+                elif key == self.description_key:
                     selected_option, _ = flat_options[current_row]
                     self._description_page(stdscr, selected_option)
 
@@ -360,7 +370,7 @@ class Tui:
             if max_y > 1:
                 stdscr.addstr(0, 2, f"Editing - {option.name} "[:max_x-4])
             if max_y > 3:
-                stdscr.addstr(max_y - 2, 2, f"Press {curses.keyname(self.app.abort_key).decode()} to abort "[:max_x-4])
+                stdscr.addstr(max_y - 2, 2, f"Press {curses.keyname(self.abort_key).decode()} to abort "[:max_x-4])
 
             stdscr.refresh()
             editwin.move(0, 0)
@@ -377,7 +387,7 @@ class Tui:
                 nonlocal editwin
                 editwin = redraw_window()
                 return -1  # Special value to indicate resize
-            elif ch == self.app.abort_key:
+            elif ch == self.abort_key:
                 raise KeyboardInterrupt
             elif ch in (curses.ascii.CR, curses.ascii.NL):
                 return 7
@@ -420,7 +430,7 @@ class Tui:
         while True:
             stdscr.clear()
             stdscr.addstr(0, 2, f"Editing - {option.name} "[:max_x-4])
-            stdscr.addstr(curses.LINES - 2, 2, f"Press {curses.keyname(self.app.abort_key).decode()} abort ")
+            stdscr.addstr(curses.LINES - 2, 2, f"Press {curses.keyname(self.abort_key).decode()} abort ")
             for idx, choice in enumerate(option.choices):
                 if idx == current_choice:
                     stdscr.attron(curses.color_pair(1))
@@ -438,7 +448,7 @@ class Tui:
             elif key in (curses.KEY_ENTER, 10, 13):
                 option.value = current_choice
                 break
-            elif key == self.app.abort_key:
+            elif key == self.abort_key:
                 option.value = original_choice
                 break
 

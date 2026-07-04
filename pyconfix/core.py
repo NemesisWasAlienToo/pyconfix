@@ -26,15 +26,6 @@ class Core:
         self.aliases = {}
         self.config_name = ""
 
-        self.save_key = ord('s')
-        self.save_diff_key = ord('d')
-        self.quite_key = ord('q')
-        self.collapse_key = ord('c')
-        self.search_key = ord('/')
-        self.help_key = ord('h')
-        self.abort_key = 1  # Ctrl+A
-        self.description_key = 4  # Ctrl+D
-
     def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
         """Register an alias and guard against accidental duplicates."""
         if alias_option.option_type != ConfigOptionType.ENUM:

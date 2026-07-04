@@ -70,7 +70,7 @@ def app(tmp_path, monkeypatch):
 
 def test_menu_loop_quits_cleanly(app, stub_curses):
     tui = Tui(app,"out.json")
-    screen = FakeStdscr([app.quite_key])
+    screen = FakeStdscr([tui.quite_key])
     tui._menu_loop(screen)
     assert screen.drawn
 
@@ -78,14 +78,14 @@ def test_menu_loop_quits_cleanly(app, stub_curses):
 def test_menu_loop_toggles_first_bool(app, stub_curses):
     assert app._get("FIRST_BOOL").value is True
     tui = Tui(app,"out.json")
-    tui._menu_loop(FakeStdscr([curses.KEY_ENTER, app.quite_key]))
+    tui._menu_loop(FakeStdscr([curses.KEY_ENTER, tui.quite_key]))
     assert app._get("FIRST_BOOL").value is False
 
 
 def test_menu_loop_save_writes_config(app, stub_curses, tmp_path):
     out = str(tmp_path / "out.json")
     tui = Tui(app,out)
-    tui._menu_loop(FakeStdscr([app.save_key, ord(' '), app.quite_key]))
+    tui._menu_loop(FakeStdscr([tui.save_key, ord(' '), tui.quite_key]))
     written = json.loads((tmp_path / "out.json").read_text())
     assert written == app.dump()
 
@@ -113,7 +113,8 @@ def test_run_save_func_receives_config_data(tmp_path, monkeypatch, stub_curses):
     out = str(tmp_path / "out.json")
 
     # Drive the real runner graphical path: save (full dump), dismiss, then quit.
-    screen = FakeStdscr([cfg.save_key, ord(" "), cfg.quite_key])
+    # cfg.run() builds the Tui internally, so reference the keys on the Tui class.
+    screen = FakeStdscr([Tui.save_key, ord(" "), Tui.quite_key])
     monkeypatch.setattr(curses, "wrapper", lambda func, *a: func(screen), raising=False)
     cfg.run(output_file=out, save_func=saver)
 

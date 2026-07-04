@@ -111,39 +111,42 @@ def _load_file(core, path):
     name, options = next(iter(data.items()))
     base_path = os.path.dirname(os.path.abspath(path))
 
-    # Includes are a file concern; resolve them here. Included options are loaded
-    # before the including file's own options (matching the original ordering).
-    includes = options.get("include", []) if isinstance(options, dict) else []
-    for include_file in includes:
-        include_path = os.path.join(base_path, include_file)
-        if not os.path.exists(include_path):
-            raise ValueError(f"A non-existing file was included: {include_path}")
-        _load_file(core, include_path)
-
+    # Parse first: this resolves any `include` directives (at any nesting level),
+    # loading their options into the manager. Assign config_name afterwards so
+    # the outermost file's name wins over any included file's name.
+    parsed = parse_options(core, options, base_path)
     core.config_name = name
-    core.add_options(*parse_options(core, options))
+    core.add_options(*parsed)
 
 
 # --------------------------------------------------------------------------- #
 # Compact-syntax parsing: schema dict -> ConfigOption objects
 # --------------------------------------------------------------------------- #
 
-def parse_options(core, options_data):
+def parse_options(core, options_data, base_path=None):
     """Build the top-level options for one schema section into a list.
 
     Nested group children are attached to their group; only the returned
-    top-level options should be handed to ``core.add_options``.
+    top-level options should be handed to ``core.add_options``. An ``include``
+    directive (at any nesting level) loads the referenced files' options into the
+    manager immediately — before the including section's own options.
     """
+    if base_path is None:
+        base_path = os.getcwd()
     parsed_options = []
     for key, value in options_data.items():
-        # 'include' is a file directive handled during loading, not an option.
         if key == 'include':
+            for include_file in value:
+                include_path = os.path.join(base_path, include_file)
+                if not os.path.exists(include_path):
+                    raise ValueError(f"A non-existing file was included: {include_path}")
+                _load_file(core, include_path)
             continue
-        parsed_options.append(_parse_option(core, key, value))
+        parsed_options.append(_parse_option(core, key, value, base_path))
     return parsed_options
 
 
-def _parse_option(core, name, option_data):
+def _parse_option(core, name, option_data, base_path=None):
     if not isinstance(option_data, dict):
         if isinstance(option_data, list):
             option_data = {'choices': option_data}
@@ -190,56 +193,67 @@ def _parse_option(core, name, option_data):
         option = custom_type.clone_with(
             name=name,
             default=option_data.get('default', custom_type.default),
-            # default=option_data.get('default', def_value),
             description=option_data.get('description', custom_type.description),
             dependencies=option_data.get('dependencies', custom_type.dependencies),
         )
     if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
-        option.options = parse_options(core, option_data['options'])
+        option.options = parse_options(core, option_data['options'], base_path)
     elif option.option_type == ConfigOptionType.ENUM:
+        # Built as STRING above, so ConfigOption.__init__ did not coerce an
+        # out-of-range default; do it here (mirroring the ENUM constructor path)
+        # instead of letting choices.index() raise on a bad default.
+        if option.default not in option.choices:
+            option.default = option.choices[0]
         option.value = option.choices.index(option.default)
 
-    def _is_option_available_impl(option, root):
-        def getter_function_impl(key, options_list):
-            key_upper = key.upper()
-            if key_upper == root:
-                raise ValueError(f"Cycle detected in the dependency of {option.name}: '{root}'")
-            for opt in options_list:
-                if opt.option_type == ConfigOptionType.GROUP:
-                    found, value = getter_function_impl(key, opt.options)
-                    if found:
-                        return True, value
-                # Compare names in a case-insensitive manner.
-                elif opt.name.upper() == key_upper:
-                    if not _is_option_available_impl(opt, root):
-                        return True, False
-                    default_value = opt.default
-                    if opt.option_type == ConfigOptionType.ENUM:
-                        default_value = opt.choices.index(opt.default)
-                        return True, opt.choices[opt.value] if opt.value is not None else default_value
-                    return True, opt.value if opt.value is not None else default_value
-                # If an enum value being parsed as key instead of a key name
-                elif opt.option_type == ConfigOptionType.ENUM:
-                    for choice in opt.choices:
-                        if choice.upper() == key_upper:
-                            return True, key
-            return False, None
-
-        def getter_function(key):
-            found, value = getter_function_impl(key, core.options)
-            if not found:
-                raise ValueError(f"Invalid token: {key}")
-            return value
-
-        if not option.dependencies:
-            return lambda x: True
-        if callable(option.dependencies):
-            return lambda x: option.dependencies(x)
-        else:
-            parser = BooleanExpressionParser(getter=getter_function)
-            return lambda x: parser.evaluate_postfix(option.postfix_dependencies)
-    option.dependencies = _is_option_available_impl(option, option.name)
+    option.dependencies = _compile_dependencies(core, option)
     return option
+
+
+def _enum_choice_exists(options, key):
+    """True if ``key`` names a choice of some ENUM option — used when an enum
+    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
+    key_upper = key.upper()
+    for opt in options:
+        if opt.option_type == ConfigOptionType.GROUP:
+            if _enum_choice_exists(opt.options, key):
+                return True
+        elif opt.option_type == ConfigOptionType.ENUM:
+            if any(choice.upper() == key_upper for choice in opt.choices):
+                return True
+    return False
+
+
+def _compile_dependencies(core, option):
+    """Compile ``option.dependencies`` into a ``predicate(x) -> bool``.
+
+    Name resolution reuses ``core._get`` (case-insensitive, descends into groups)
+    rather than re-walking the option tree, so there is a single resolver shared
+    with attribute access. The predicate is evaluated lazily, by which point the
+    whole tree has been registered.
+    """
+    if not option.dependencies:
+        return lambda x: True
+    if callable(option.dependencies):
+        return lambda x: option.dependencies(x)
+
+    root_upper = option.name.upper()
+
+    def getter(key):
+        if key.upper() == root_upper:
+            raise ValueError(f"Cycle detected in the dependency of {option.name}: '{option.name}'")
+        opt = core._get(key)
+        if opt is not None:
+            if opt.option_type == ConfigOptionType.ENUM:
+                return opt.choices[opt.value] if opt.value is not None else opt.default
+            return opt.value if opt.value is not None else opt.default
+        # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
+        if _enum_choice_exists(core.options, key):
+            return key
+        raise ValueError(f"Invalid token: {key}")
+
+    parser = BooleanExpressionParser(getter=getter)
+    return lambda x: parser.evaluate_postfix(option.postfix_dependencies)
 
 
 def finalize_dependencies(core):

@@ -233,9 +233,12 @@ class Core:
         """
         diff = {}
         for key, value in self.dump().items():
+            # dump() already emits None for unavailable options, so reuse that
+            # instead of recomputing availability for every key.
+            if value is None:
+                continue
             opt = self._get(key)
-            av = self._is_option_available(opt)
-            if av and (value != opt.default):
+            if value != opt.default:
                 diff[key] = value
         return diff
 

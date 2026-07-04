@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed a crash on entering TUI search mode (it referenced a helper that had moved to the TUI).
 - Updated `python -m pyconfix` to the new load/apply/run API.
 - In-session action attribute lookups report unknown keys before checking availability, giving a clear error instead of a `NoneType` failure.
+- `include` directives nested inside a group's options are now resolved (they were silently dropped); an included file's name no longer overrides the outer file's config name.
+- A schema enum with an out-of-range `default` now coerces to the first choice instead of crashing the load, matching the Python `ConfigOption` behaviour.
+- Dependency name resolution reuses `core._get` (one resolver shared with attribute access) instead of a second hand-rolled tree walk, and `diff()` no longer recomputes availability that `dump()` already determined.
 
 ### Deprecated
 - Empty

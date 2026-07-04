@@ -167,7 +167,7 @@ def main():
     config.apply_config(config_files=args.load, overlay=args.option)
     
     #################################################
-    # Run pyconfix TUI ##############################
+    # Run pyconfix ##################################
     #################################################
     if not args.cli:
         config.run(output_file=default_output_file, show_disabled=True, save_func=custom_save)

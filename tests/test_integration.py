@@ -1,17 +1,18 @@
 """End-to-end tests across the layered design (runner -> core -> serializer).
 
 These drive the public ``pyconfix`` runner through the full pipeline (schema
-load -> dependency compile -> config apply -> dump/diff/get/actions) headless
-(``graphical=False``), i.e. without the curses TUI. They are the integration
-safety net; per-module behavior is covered in test_core / test_serializer /
-test_parser / test_option.
+load -> dependency compile -> config apply -> dump/diff/get/actions) headless,
+i.e. without launching the curses TUI (``run()``). Loading and applying are now
+explicit steps (``load_schem`` / ``apply_config``); the TUI is only started by
+``run()``. They are the integration safety net; per-module behavior is covered in
+test_core / test_separation / test_parser / test_option.
 """
 
 import json
 
 import pytest
 
-from pyconfix import pyconfix, ConfigOption, ConfigOptionType, serializer
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType
 
 
 # --------------------------------------------------------------------------- #
@@ -55,17 +56,15 @@ EXTRA_SCHEMA = {"Extra": {"EXTRA_FEATURE": {"type": "bool", "default": False}}}
 @pytest.fixture
 def make_config(tmp_path, monkeypatch):
     """Factory that writes the schema files, builds a configured pyconfix, and
-    runs it headless. Returns a callable so each test gets a fresh instance.
+    loads + applies it headless. Returns a callable so each test gets a fresh
+    instance.
     """
     (tmp_path / "main.json").write_text(json.dumps(MAIN_SCHEMA))
     (tmp_path / "extra.json").write_text(json.dumps(EXTRA_SCHEMA))
     monkeypatch.chdir(tmp_path)
 
     def _build(*, overlay=None, config_files=None, with_python_options=True):
-        cfg = pyconfix(
-            schem_files=["main.json"],
-            output_file=str(tmp_path / "out.json"),
-        )
+        cfg = pyconfix()
         cfg.register_alias(
             name="tri-state",
             option_type=ConfigOptionType.ENUM,
@@ -85,7 +84,9 @@ def make_config(tmp_path, monkeypatch):
             def deploy(x):
                 return x.build() + 1
 
-        cfg.run(graphical=False, overlay=overlay, config_files=config_files or [])
+        # Loading and applying are explicit, separate steps now.
+        cfg.load_schem(["main.json"])
+        cfg.apply_config(config_files=config_files or [], overlay=overlay)
         return cfg
 
     return _build
@@ -131,7 +132,7 @@ def test_too_many_top_level_keys_is_rejected(tmp_path, monkeypatch):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"A": {}, "B": {}}))
     monkeypatch.chdir(tmp_path)
-    cfg = pyconfix(schem_files=["bad.json"])
+    cfg = pyconfix()
     with pytest.raises(SystemExit):
         cfg.load_schem(["bad.json"])
 
@@ -276,28 +277,22 @@ def test_in_session_action_returns_bare_value(cfg):
 # Serialization to disk
 # --------------------------------------------------------------------------- #
 
-def test_write_config_roundtrip(cfg, tmp_path):
-    serializer.write_config(cfg, output_diff=False)
+def test_save_writes_full_dump(cfg, tmp_path):
+    out = str(tmp_path / "out.json")
+    cfg.save(out)
     written = json.loads((tmp_path / "out.json").read_text())
     assert written == cfg.dump()
 
 
-def test_save_func_is_invoked(make_config, tmp_path, monkeypatch):
-    (tmp_path / "main.json").write_text(json.dumps(MAIN_SCHEMA))
-    (tmp_path / "extra.json").write_text(json.dumps(EXTRA_SCHEMA))
-    monkeypatch.chdir(tmp_path)
-
+def test_save_func_is_invoked(cfg, tmp_path):
+    # runner.save(output_file, output_diff, save_func) writes the data and hands
+    # it to the save hook.
     calls = []
 
-    def saver(config_data, config, is_diff):
-        calls.append((dict(config_data), is_diff))
+    def saver(config_data):
+        calls.append(dict(config_data))
 
-    cfg = pyconfix(schem_files=["main.json"], output_file=str(tmp_path / "out.json"),
-                   save_func=saver)
-    cfg.register_alias(name="tri-state", option_type=ConfigOptionType.ENUM,
-                       choices=["INTEGRATED", "MODULE", "DISABLED"])
-    cfg.run(graphical=False)
-    serializer.write_config(cfg, output_diff=True)
+    cfg.save(str(tmp_path / "out.json"), output_diff=True, save_func=saver)
 
     assert len(calls) == 1
-    assert calls[0][1] is True
+    assert calls[0] == cfg.diff()

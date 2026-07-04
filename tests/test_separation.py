@@ -76,8 +76,27 @@ def test_read_config_files_merges_in_order(tmp_path):
 
 
 def test_read_config_files_missing_raises():
+    # The low-level reader is strict: a listed file must exist.
     with pytest.raises(ValueError):
         serializer.read_config_files(["/no/such/config.json"])
+
+
+def test_apply_config_with_missing_default_falls_back_to_defaults(written_schema):
+    # pyconfix().load_schem().apply_config() must not crash when the default
+    # output_config.json does not exist yet (fresh checkout) — the default is
+    # loaded only if present.
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    cfg.apply_config()               # default config file is absent -> skipped
+    assert cfg.AN_INT == 7           # schema default
+
+
+def test_apply_config_explicit_missing_file_raises(written_schema):
+    # An explicitly named config file, however, must exist.
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    with pytest.raises(ValueError):
+        cfg.apply_config(config_files=["does_not_exist.json"])
 
 
 # --------------------------------------------------------------------------- #
@@ -99,13 +118,14 @@ def test_serializer_parses_options_into_core_via_add_options():
     assert core._get("E").option_type == ConfigOptionType.ENUM
 
 
-def test_core_apply_config_takes_a_dict_and_overlay():
+def test_core_apply_config_takes_a_dict():
+    # Core.apply_config takes a plain selections dict; overlay/merge is the
+    # runner's job now.
     core = Core()
     _load_dict(core, {"N": {"type": "int", "default": 5}})
+    assert core.N == 5                  # constructed default before any apply
     core.apply_config({"N": 10})
     assert core.N == 10
-    core.apply_config({"N": 10}, overlay={"N": 99})
-    assert core.N == 99
 
 
 def test_serializer_finalize_cascades_group_dependency():
@@ -122,8 +142,8 @@ def test_serializer_finalize_cascades_group_dependency():
 # runner: composition + forwarding
 # --------------------------------------------------------------------------- #
 
-def test_runner_forwards_option_access_to_core(written_schema):
-    cfg = pyconfix(schem_files=["sep.json"])
+def test_runner_forwards_option_access_to_core():
+    cfg = pyconfix()
     assert isinstance(cfg.core, Core)
     # option methods/attrs resolve through to the core
     cfg.add_options(ConfigOption(name="X", option_type=ConfigOptionType.BOOL, default=True))
@@ -131,37 +151,61 @@ def test_runner_forwards_option_access_to_core(written_schema):
     assert cfg.options is cfg.core.options
 
 
-def test_runner_load_and_run_headless(written_schema):
-    cfg = pyconfix(schem_files=["sep.json"], output_file=str(written_schema / "out.json"))
-    cfg.run(graphical=False, overlay={"AN_INT": 42})
+def test_runner_load_and_apply_headless(written_schema):
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    cfg.apply_config(config_files=[], overlay={"AN_INT": 42})
     assert cfg.config_name == "Sep"
     assert cfg.AN_INT == 42
     assert cfg._is_option_available(cfg._get("GATED")) is True
 
 
+def test_runner_apply_config_overlay_beats_file(written_schema):
+    (written_schema / "saved.json").write_text(json.dumps({"AN_INT": 5}))
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    cfg.apply_config(config_files=["saved.json"], overlay={"AN_INT": 99})
+    assert cfg.AN_INT == 99             # overlay wins over the saved file
+
+
 def test_load_schem_reports_multiple_top_entries(tmp_path, monkeypatch):
     (tmp_path / "bad.json").write_text(json.dumps({"A": {}, "B": {}}))
     monkeypatch.chdir(tmp_path)
-    cfg = pyconfix(schem_files=["bad.json"])
+    cfg = pyconfix()
     with pytest.raises(SystemExit):
         cfg.load_schem(["bad.json"])
 
 
-def test_load_schem_then_run_does_not_duplicate(written_schema):
-    # Loading the schema twice must not append a second copy of the tree.
-    cfg = pyconfix(schem_files=["sep.json"], output_file=str(written_schema / "out.json"))
+def test_runner_save_writes_file_and_calls_hook(written_schema):
+    cfg = pyconfix()
     cfg.load_schem(["sep.json"])
-    cfg.run(graphical=False)
+    out = str(written_schema / "out.json")
+
+    seen = {}
+    returned = cfg.save(out, save_func=lambda data: seen.update(data))
+
+    written = json.loads((written_schema / "out.json").read_text())
+    assert written == cfg.dump()          # full dump by default
+    assert returned == cfg.dump()         # returns what it wrote
+    assert seen == cfg.dump()             # save_func received the data
+
+
+def test_runner_save_diff_only(written_schema):
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    cfg.apply_config(config_files=[], overlay={"AN_INT": 42})
+    out = str(written_schema / "out.json")
+    assert cfg.save(out, output_diff=True) == {"AN_INT": 42}
+
+
+def test_load_schem_loads_the_tree_once(written_schema):
+    # Loading is an explicit one-shot step; a single call registers each option
+    # exactly once (run() no longer re-loads the schema).
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
     names = [o.name for o in cfg.options]
     assert names == list(dict.fromkeys(names)), f"duplicated options: {names}"
-
-
-def test_run_twice_is_idempotent(written_schema):
-    cfg = pyconfix(schem_files=["sep.json"], output_file=str(written_schema / "out.json"))
-    cfg.run(graphical=False)
-    first = [o.name for o in cfg.options]
-    cfg.run(graphical=False)
-    assert [o.name for o in cfg.options] == first
+    assert set(names) == {"A_BOOL", "AN_INT", "GATED"}
 
 
 # --------------------------------------------------------------------------- #
@@ -208,8 +252,8 @@ def test_nested_group_include_is_loaded(tmp_path, monkeypatch):
     }))
     monkeypatch.chdir(tmp_path)
 
-    cfg = pyconfix(schem_files=["main.json"], output_file=str(tmp_path / "out.json"))
-    cfg.run(graphical=False)
+    cfg = pyconfix()
+    cfg.load_schem(["main.json"])
 
     assert cfg._get("CHILD") is not None
     assert cfg._get("NESTED_INCLUDED") is not None
@@ -224,8 +268,8 @@ def test_top_level_include_is_loaded(tmp_path, monkeypatch):
     (tmp_path / "extra.json").write_text(json.dumps({"Extra": {"Y": True}}))
     monkeypatch.chdir(tmp_path)
 
-    cfg = pyconfix(schem_files=["main.json"], output_file=str(tmp_path / "out.json"))
-    cfg.run(graphical=False)
+    cfg = pyconfix()
+    cfg.load_schem(["main.json"])
     assert cfg._get("Y") is not None
 
 
@@ -267,8 +311,9 @@ def test_headless_path_never_imports_curses(tmp_path):
         sys.modules['curses'] = None          # any 'import curses' now fails
         import pyconfix.core, pyconfix.serializer, pyconfix.runner
         from pyconfix import pyconfix as P
-        cfg = P(schem_files=['sep.json'], output_file='out.json')
-        cfg.run(graphical=False)              # load + apply, no TUI
+        cfg = P()
+        cfg.load_schem(['sep.json'])          # load + apply, no TUI
+        cfg.apply_config(config_files=[])
         print(cfg.dump()['AN_INT'])
     """)
     result = subprocess.run([sys.executable, "-c", script],

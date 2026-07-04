@@ -8,19 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- Empty
+- Explicit, chainable `load_schem()` and `apply_config()` steps on the runner (each returns the instance), so API users control when and in what order the schema is loaded and saved selections are applied.
+- Sensible defaults for the schema file (`pyconfixfile.json`) and config file (`output_config.json`) so the minimal example is a one-liner.
+- Decorator API (`action_option` / `group_option`) now lives on the runner.
+- `pyconfix.save(output_file, output_diff=False, save_func=None)` — one method that writes the config (full dump, or diff when `output_diff=True`) and runs the optional save hook, returning the written data. The TUI, `example.py`, and `python -m pyconfix` all persist through it.
 
 ### Changed
-- Empty
+- Loading and applying no longer happen implicitly inside `run()`; call `load_schem()` / `apply_config()` explicitly first.
+- `run()` now only launches the interactive TUI and takes the TUI-only settings `output_file`, `show_disabled`, and `save_func`.
+- `save_func` now receives a single argument — the flattened config dict: `save_func(config_data)`.
+- `serializer.write_config(output_file, config_data, save_func=None)` new signature.
+- Flattening for display (`_flatten_options`) moved from Core to the TUI.
+- Config-file merging and `overlay` handling moved from `Core.apply_config` to the runner's `apply_config`.
+- `apply_config()` with no arguments now applies nothing (schema defaults are kept) instead of loading a default file; a named config file must exist or a `ValueError` is raised. The shipped `example.py` and `python -m pyconfix` check `os.path.exists` before loading the saved `output_config.json`, so a fresh checkout works and the TUI's save creates the file for later runs.
 
 ### Fixed
-- Empty
+- Fixed a crash on entering TUI search mode (it referenced a helper that had moved to the TUI).
+- Updated `python -m pyconfix` to the new load/apply/run API.
+- In-session action attribute lookups report unknown keys before checking availability, giving a clear error instead of a `NoneType` failure.
 
 ### Deprecated
 - Empty
 
 ### Removed
-- Empty
+- Constructor no longer accepts `schem_files`, `output_file`, or `expanded`; `run()` no longer accepts `graphical`, `config_files`, or `overlay`.
 
 ### Security
 - Empty

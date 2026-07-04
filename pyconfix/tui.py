@@ -20,12 +20,14 @@ import curses.ascii
 import textwrap
 
 from .option import ConfigOptionType
-from . import serializer
 
 
 class Tui:
-    def __init__(self, app):
+    def __init__(self, app, output_file, show_disabled=False, save_func=None):
         self.app = app
+        self.output_file = output_file
+        self.show_disabled = show_disabled
+        self.save_func = save_func
 
     def run(self):
         """Run the main interactive loop using curses."""
@@ -157,17 +159,30 @@ class Tui:
             if idx == current_row:
                 stdscr.attroff(curses.color_pair(1))
 
+    def _flatten_options(self, options, depth=0):
+        app = self.app
+        flat_options = []
+        for option in options:
+            available = app._is_option_available(option)
+            app._sync_option_value(option, available)
+            if not available and not self.show_disabled:
+                continue
+            flat_options.append((option, depth))
+            if option.option_type == ConfigOptionType.GROUP and option.expanded:
+                flat_options.extend(self._flatten_options(option.options, depth + 1))
+        return flat_options
+
     def _search_options(self, options, query, depth=0):
         app = self.app
         flat_options = []
         for option in options:
             available = app._is_option_available(option)
             app._sync_option_value(option, available)
-            if app.show_disabled or available:
+            if self.show_disabled or available:
                 if option.option_type == ConfigOptionType.GROUP:
                     option.expanded = True
                 if query.lower() in option.name.lower():
-                    flat_options.extend(app._flatten_options([option], depth))
+                    flat_options.extend(self._flatten_options([option], depth))
                 elif option.option_type == ConfigOptionType.GROUP:
                     nested_options = self._search_options(option.options, query, depth + 1)
                     if nested_options:
@@ -210,7 +225,7 @@ class Tui:
                 info = f"'{curses.keyname(app.quite_key).decode()}': Exit, '{curses.keyname(app.save_key).decode()}': Save, '{curses.keyname(app.collapse_key).decode()}': Collapse Group, '/': Search, '{curses.keyname(app.help_key).decode()}': Help"
                 stdscr.addstr(max_y - 2, 2, info[:max_x - 5])
 
-            flat_options = self._search_options(app.options, search_query) if search_mode else app._flatten_options(app.options)
+            flat_options = self._search_options(app.options, search_query) if search_mode else self._flatten_options(app.options)
             if current_row >= len(flat_options):
                 current_row = len(flat_options) - 1
             if current_row < 0:
@@ -428,7 +443,7 @@ class Tui:
                 break
 
     def _save_config(self, stdscr, output_diff):
-        serializer.write_config(self.app, output_diff)
+        self.app.save(self.output_file, output_diff, self.save_func)
         stdscr.clear()
         stdscr.addstr(0, 0, "Configuration saved successfully.")
         stdscr.addstr(1, 0, "Press any key to continue.")

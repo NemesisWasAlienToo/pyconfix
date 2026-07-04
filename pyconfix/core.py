@@ -21,13 +21,7 @@ from .option import *
 
 
 class Core:
-    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json",
-                 save_func=None, expanded=False, show_disabled=False):
-        self.schem_files = schem_files
-        self.output_file = output_file
-        self.save_func = save_func
-        self.show_disabled = show_disabled
-        self.expanded = expanded
+    def __init__(self):
         self.options = []
         self.aliases = {}
         self.config_name = ""
@@ -100,8 +94,6 @@ class Core:
             elif option.name in saved_config:
                 value = saved_config[option.name]
                 option.value = option.choices.index(value if value else option.default) if option.option_type == ConfigOptionType.ENUM else value
-            else:
-                option.value = option.default if option.option_type != ConfigOptionType.ENUM else option.choices.index(option.default)
 
     def _is_option_available(self, option):
         def _is_option_available_impl(option, root):
@@ -123,18 +115,6 @@ class Core:
                 option.value = None
         elif option.value is None:
             option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
-
-    def _flatten_options(self, options, depth=0):
-        flat_options = []
-        for option in options:
-            available = self._is_option_available(option)
-            self._sync_option_value(option, available)
-            if not available and not self.show_disabled:
-                continue
-            flat_options.append((option, depth))
-            if option.option_type == ConfigOptionType.GROUP and option.expanded:
-                flat_options.extend(self._flatten_options(option.options, depth + 1))
-        return flat_options
 
     def _execute_action(self, option):
         trace = []
@@ -232,15 +212,24 @@ class Core:
     # Applying selections and producing output data
     # ----------------------------------------------------------------------- #
 
-    def apply_config(self, saved_config=None, overlay=None):
+    # def apply_config(self, saved_config=None, overlay=None):
+    #     """Apply saved selections (a dict) and an optional overlay to the options.
+
+    #     The serializer reads any config files into ``saved_config``; this method
+    #     is where the selections are imported onto the option tree.
+    #     """
+    #     saved_config = dict(saved_config) if saved_config else {}
+    #     if overlay:
+    #         saved_config.update(overlay)
+    #     self._apply_config_to_options(self.options, saved_config)
+
+    def apply_config(self, saved_config=None):
         """Apply saved selections (a dict) and an optional overlay to the options.
 
         The serializer reads any config files into ``saved_config``; this method
         is where the selections are imported onto the option tree.
         """
         saved_config = dict(saved_config) if saved_config else {}
-        if overlay:
-            saved_config.update(overlay)
         self._apply_config_to_options(self.options, saved_config)
 
     def dump(self):

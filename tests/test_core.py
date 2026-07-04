@@ -1,9 +1,10 @@
 """Unit tests for the Core manager (pyconfix.core) in isolation.
 
 Core is the heart of the library, so it gets the most direct coverage here:
-aliases, applying selections, availability, value sync, flatten, dump/diff,
+aliases, applying selections, availability, value sync, dump/diff,
 attribute/get access, and action execution — all built by hand (no files, no
-runner, no curses) so failures point straight at core.
+runner, no curses) so failures point straight at core. (Flattening for display
+lives on the TUI now and is covered in test_tui_smoke.)
 """
 
 import pytest
@@ -162,32 +163,6 @@ def test_apply_enum_by_choice_string(core):
     core.apply_config({"MODE": "C"})
     assert core.MODE == "C"
     assert core._get("MODE").value == 2
-
-
-def test_apply_overlay_takes_precedence(core):
-    core.apply_config({"N": 1}, overlay={"N": 99})
-    assert core.N == 99
-
-
-# --------------------------------------------------------------------------- #
-# Flatten
-# --------------------------------------------------------------------------- #
-
-def test_flatten_includes_expanded_group_children_with_depth(core):
-    core.apply_config({})
-    flat = core._flatten_options(core.options)
-    names = {o.name: d for o, d in flat}
-    assert names["G"] == 0
-    assert names["SUB"] == 1
-
-
-def test_flatten_hides_disabled_unless_show_disabled(core):
-    core._get("FLAG").value = False      # disables N (depends on FLAG)
-    hidden = [o.name for o, _ in core._flatten_options(core.options)]
-    assert "N" not in hidden
-    core.show_disabled = True
-    shown = [o.name for o, _ in core._flatten_options(core.options)]
-    assert "N" in shown
 
 
 # --------------------------------------------------------------------------- #

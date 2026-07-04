@@ -18,24 +18,15 @@ user's perspective ``pyconfix`` behaves exactly as before while the actual optio
 logic lives in Core.
 """
 
-import os
-
 from .core import Core
 from .option import ConfigOption, ConfigOptionType
 from . import serializer
 
 
 class pyconfix:
-    def __init__(self, schem_files=["pyconfixfile.json"], output_file="output_config.json",
-                 save_func=None, expanded=False, show_disabled=False):
+    def __init__(self):
         # Bypass __getattr__ during construction.
-        object.__setattr__(self, "_core", Core(
-            schem_files=schem_files,
-            output_file=output_file,
-            save_func=save_func,
-            expanded=expanded,
-            show_disabled=show_disabled,
-        ))
+        object.__setattr__(self, "_core", Core())
 
     def __getattr__(self, name):
         # Only reached for attributes not found on the runner itself. Everything
@@ -49,9 +40,23 @@ class pyconfix:
         """The underlying option manager."""
         return self._core
 
-    def load_schem(self, schem_files):
+    def load_schem(self, schem_files=["pyconfixfile.json"]):
         """Read and import schema files into the core option tree."""
         serializer.load_schema(self._core, schem_files)
+        return self
+
+    def apply_config(self, config_files=None, overlay=None):
+        """Apply saved selections (and an optional overlay) to the options.
+
+        Every named config file must exist (a missing one raises). With no
+        argument nothing is loaded and the schema defaults are kept; callers that
+        want to load a saved file "only if it's there" should check existence
+        first (see example.py).
+        """
+        saved_config = serializer.read_config_files(config_files or [])
+        if overlay: saved_config.update(overlay)
+        self._core.apply_config(saved_config)
+        return self
 
     # ----------------------------------------------------------------------- #
     # Decorator API for registering actions and groups
@@ -119,22 +124,20 @@ class pyconfix:
         group_option = self._core.options[-1]
         return self._create_action_decorator(group=group_option)
 
-    def run(self, config_files=None, overlay=None, graphical=True):
+    def save(self, output_file="output_config.json", output_diff=False, save_func=None):
+        """Write the current configuration to ``output_file``.
+
+        Writes the full dump, or only the diff from defaults when ``output_diff``
+        is True, then invokes the optional ``save_func`` with the written data.
+        Returns the data that was written.
         """
-        Run the configuration process.
-        :param config_files: Optional saved-config file(s) to apply.
-        :param overlay: Optional dict to override settings.
-        :param graphical: Launch the interactive TUI when True.
+        config_data = self._core.diff() if output_diff else self._core.dump()
+        serializer.write_config(output_file, config_data, save_func)
+        return config_data
+
+    def run(self, output_file="output_config.json", show_disabled=False, save_func=None):
         """
-        core = self._core
-        config_files = config_files or []
-
-        serializer.load_schema(core, core.schem_files)
-
-        if len(config_files) == 0 and os.path.exists(core.output_file):
-            config_files = [core.output_file]
-        core.apply_config(serializer.read_config_files(config_files), overlay)
-
-        if graphical:
-            from .tui import Tui
-            Tui(core).run()
+        Run the interactive TUI configuration process.
+        """
+        from .tui import Tui
+        Tui(self, output_file=output_file, show_disabled=show_disabled, save_func=save_func).run()

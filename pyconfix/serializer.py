@@ -178,7 +178,6 @@ def _parse_option(core, name, option_data):
         dependencies=option_data.get('dependencies', ""),
         requires=option_data.get('requires', ""),
         choices=option_data.get('choices', []),
-        expanded=core.expanded,
         options=[]
     )
     try:
@@ -263,7 +262,8 @@ def finalize_dependencies(core):
             if group_dependencies:
                 opt.dependencies = combine(group_dependencies, opt.dependencies)
             if group_requires:
-                opt.requires = combine(group_requires, opt.requires)
+                if opt.option_type in [ConfigOptionType.GROUP, ConfigOptionType.ACTION]:
+                    opt.requires = combine(group_requires, opt.requires)
             if opt.option_type == ConfigOptionType.GROUP:
                 cascade_group(opt.options, opt.dependencies, opt.requires)
 
@@ -275,7 +275,11 @@ def finalize_dependencies(core):
 # --------------------------------------------------------------------------- #
 
 def read_config_files(config_files):
-    """Read and merge saved-configuration files into a single dict."""
+    """Read and merge saved-configuration files into a single dict.
+
+    Every listed file must exist; a missing file raises ``ValueError``. Callers
+    that want "load it only if it's there" should check existence first.
+    """
     saved_config = {}
     for config_file in config_files:
         if not os.path.exists(config_file):
@@ -288,13 +292,12 @@ def read_config_files(config_files):
     return saved_config
 
 
-def write_config(core, output_diff=True):
-    """Emit the current configuration to ``core.output_file``.
+def write_config(output_file, config_data, save_func=None):
+    """Emit the current configuration to ``output_file``.
 
     Core produces the data (diff or full dump); this module writes it and then
     invokes the user's optional ``save_func``.
     """
-    config_data = core.diff() if output_diff else core.dump()
-    write(core.output_file, config_data)
-    if core.save_func:
-        core.save_func(config_data, core, output_diff)
+    write(output_file, config_data)
+    if save_func:
+        save_func(config_data)

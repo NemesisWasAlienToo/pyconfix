@@ -135,8 +135,6 @@ class Core:
                     if opt.option_type == ConfigOptionType.ACTION:
                         return lambda: None
                     return None
-                if opt is None:
-                    raise AttributeError(f"Invalid key: '{name}'")
                 if opt.option_type == ConfigOptionType.ENUM:
                     return opt.choices[opt.value] if opt.value is not None else None
                 elif opt.option_type == ConfigOptionType.ACTION:

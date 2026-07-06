@@ -25,6 +25,9 @@ class Core:
         self.options = []
         self.aliases = {}
         self.config_name = ""
+        # Names of every registered option (upper-cased), kept across calls so
+        # duplicates are rejected globally, not just within a single add.
+        self.option_names = set()
 
     def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
         """Register an alias and guard against accidental duplicates."""
@@ -73,10 +76,41 @@ class Core:
 
     def add_options(self, *options):
         """
-        Convenience helper to append multiple ConfigOption instances.
+        Append ConfigOption instances, registering their names — and the names
+        of any nested group children — so names stay globally unique.
+
+        Raises ValueError if a name is already registered (from an earlier call
+        or elsewhere in this one). Validation happens before anything is added,
+        so a rejected call leaves the option tree unchanged.
         """
+        new_keys = set()
+
+        def claim(option):
+            key = option.name.upper()
+            if key in self.option_names or key in new_keys:
+                raise ValueError(f"Duplicate option name: '{option.name}'")
+            new_keys.add(key)
+            for child in option.options:
+                claim(child)
+
+        for option in options:
+            claim(option)
+
+        self.option_names |= new_keys
         self.options.extend(options)
         return options
+
+    def _claim_name(self, name):
+        """Reserve a single option name, raising if it is already registered.
+
+        Used when options are appended one at a time (e.g. the decorator API)
+        rather than through :meth:`add_options`, so those names take part in the
+        same global uniqueness guarantee.
+        """
+        key = name.upper()
+        if key in self.option_names:
+            raise ValueError(f"Duplicate option name: '{name}'")
+        self.option_names.add(key)
 
     def _apply_config_to_options(self, options, saved_config):
         for option in options:
@@ -84,7 +118,20 @@ class Core:
                 self._apply_config_to_options(option.options, saved_config)
             elif option.name in saved_config:
                 value = saved_config[option.name]
-                option.value = option.choices.index(value if value else option.default) if option.option_type == ConfigOptionType.ENUM else value
+                if option.option_type == ConfigOptionType.ENUM:
+                    # A saved config file is user-facing and may be stale. An
+                    # empty/blank value restores the default; any other value
+                    # that is not a valid choice is a real error, so raise a
+                    # clear, named message instead of a bare "not in list".
+                    choice = value if value else option.default
+                    if choice not in option.choices:
+                        raise ValueError(
+                            f"Invalid value '{value}' for enum option '{option.name}'; "
+                            f"expected one of {option.choices}"
+                        )
+                    option.value = option.choices.index(choice)
+                else:
+                    option.value = value
 
     def _is_option_available(self, option):
         def _is_option_available_impl(option, root):
@@ -201,19 +248,8 @@ class Core:
     # Applying selections and producing output data
     # ----------------------------------------------------------------------- #
 
-    # def apply_config(self, saved_config=None, overlay=None):
-    #     """Apply saved selections (a dict) and an optional overlay to the options.
-
-    #     The serializer reads any config files into ``saved_config``; this method
-    #     is where the selections are imported onto the option tree.
-    #     """
-    #     saved_config = dict(saved_config) if saved_config else {}
-    #     if overlay:
-    #         saved_config.update(overlay)
-    #     self._apply_config_to_options(self.options, saved_config)
-
     def apply_config(self, saved_config=None):
-        """Apply saved selections (a dict) and an optional overlay to the options.
+        """Apply saved selections (a dict) to the options.
 
         The serializer reads any config files into ``saved_config``; this method
         is where the selections are imported onto the option tree.

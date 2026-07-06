@@ -63,6 +63,8 @@ class pyconfix:
     # ----------------------------------------------------------------------- #
 
     def _create_action_decorator(self, group=None):
+        core = self._core
+
         class GroupProxy:
             def __init__(self, group):
                 self.group = group
@@ -73,6 +75,9 @@ class pyconfix:
             def action_option(self, name=None, dependencies=None, requires=None):
                 def decorator(func):
                     option_name = name or func.__name__
+                    # Reserve the name so decorator-added actions share the same
+                    # global uniqueness guarantee as add_options / schema loading.
+                    core._claim_name(option_name)
                     new_option = ConfigOption(
                         name=option_name,
                         option_type=ConfigOptionType.ACTION,
@@ -113,6 +118,9 @@ class pyconfix:
             '''Action description'''
             ...
         """
+        # Reserve the group name so it shares the same global uniqueness
+        # guarantee as add_options / schema loading.
+        self._core._claim_name(name)
         self._core.options.append(ConfigOption(
             name=name,
             option_type=ConfigOptionType.GROUP,

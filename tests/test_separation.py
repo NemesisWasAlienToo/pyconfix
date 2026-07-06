@@ -172,8 +172,24 @@ def test_load_schem_reports_multiple_top_entries(tmp_path, monkeypatch):
     (tmp_path / "bad.json").write_text(json.dumps({"A": {}, "B": {}}))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    with pytest.raises(SystemExit):
+    # The library must raise (catchable), never sys.exit the host process.
+    with pytest.raises(ValueError):
         cfg.load_schem(["bad.json"])
+
+
+def test_load_schem_missing_file_raises_not_exits():
+    # A missing schema file is a catchable error, not a process-killing sys.exit.
+    cfg = pyconfix()
+    with pytest.raises(ValueError):
+        cfg.load_schem(["definitely_missing_schema.json"])
+
+
+def test_read_config_files_corrupt_json_raises_not_exits(tmp_path):
+    # A corrupt saved-config file raises ValueError instead of print + exit(1).
+    bad = tmp_path / "broken.json"
+    bad.write_text("{ this is not valid json ")
+    with pytest.raises(ValueError):
+        serializer.read_config_files([str(bad)])
 
 
 def test_runner_save_writes_file_and_calls_hook(written_schema):
@@ -208,6 +224,15 @@ def test_load_schem_loads_the_tree_once(written_schema):
     assert set(names) == {"A_BOOL", "AN_INT", "GATED"}
 
 
+def test_load_schem_twice_raises_on_duplicate(written_schema):
+    # Names are globally unique; loading the same schema again re-registers
+    # already-known names, which add_options rejects.
+    cfg = pyconfix()
+    cfg.load_schem(["sep.json"])
+    with pytest.raises(ValueError):
+        cfg.load_schem(["sep.json"])
+
+
 # --------------------------------------------------------------------------- #
 # runner: decorator API for actions and groups (moved off Core)
 # --------------------------------------------------------------------------- #
@@ -237,6 +262,49 @@ def test_runner_group_option_and_grouped_action():
     assert cfg._get("ship").option_type == ConfigOptionType.ACTION
     # the action was registered inside the group, not at top level
     assert any(o.name == "ship" for o in proxy.get().options)
+
+
+def test_action_option_duplicate_name_raises():
+    cfg = pyconfix()
+
+    @cfg.action_option()
+    def build(x):
+        return 1
+
+    with pytest.raises(ValueError):
+        @cfg.action_option(name="BUILD")   # case-insensitive collision
+        def build_again(x):
+            return 2
+
+
+def test_group_option_duplicate_name_raises():
+    cfg = pyconfix()
+    cfg.group_option("deploy")
+    with pytest.raises(ValueError):
+        cfg.group_option("DEPLOY")
+
+
+def test_grouped_action_duplicate_name_raises():
+    cfg = pyconfix()
+    proxy = cfg.group_option("deploy")
+
+    @proxy.action_option()
+    def ship(x):
+        return 1
+
+    with pytest.raises(ValueError):
+        @proxy.action_option(name="ship")
+        def ship_again(x):
+            return 2
+
+
+def test_decorator_name_collides_with_add_options():
+    cfg = pyconfix()
+    cfg.add_options(ConfigOption(name="build", option_type=ConfigOptionType.BOOL, default=True))
+    with pytest.raises(ValueError):
+        @cfg.action_option()
+        def build(x):
+            return 1
 
 
 # --------------------------------------------------------------------------- #

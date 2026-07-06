@@ -133,7 +133,7 @@ def test_too_many_top_level_keys_is_rejected(tmp_path, monkeypatch):
     bad.write_text(json.dumps({"A": {}, "B": {}}))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError):
         cfg.load_schem(["bad.json"])
 
 

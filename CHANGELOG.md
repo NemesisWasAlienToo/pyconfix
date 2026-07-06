@@ -29,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `include` directives nested inside a group's options are now resolved (they were silently dropped); an included file's name no longer overrides the outer file's config name.
 - A schema enum with an out-of-range `default` now coerces to the first choice instead of crashing the load, matching the Python `ConfigOption` behaviour.
 - Dependency name resolution reuses `core._get` (one resolver shared with attribute access) instead of a second hand-rolled tree walk, and `diff()` no longer recomputes availability that `dump()` already determined.
+- `add_options` now raises `ValueError` on a duplicate option name, tracked in a persistent set on the manager so names stay globally unique across calls (including nested group children). A repeated `load_schem()` therefore fails loudly instead of silently duplicating the option tree. (Surfaced and fixed a real duplicate `SUB_B`/`SUB_C` in the example `schem.json`.) The decorator API (`action_option` / `group_option`, including grouped actions) reserves names through the same guarantee, so every path that adds an option is guarded against duplicates.
+- The library no longer calls `sys.exit()`/`exit()` on bad input: loading a missing schema file, a schema with more than one top-level entry, or a corrupt saved-config JSON now raises `ValueError` so an embedding application can catch it instead of having its process terminated.
+- Applying a saved config whose enum value is not a valid choice now raises a clear, named `ValueError` (naming the option and its valid choices) instead of a bare `ValueError: '...' is not in list`. A blank/empty value still restores the option's default.
 
 ### Deprecated
 - Empty

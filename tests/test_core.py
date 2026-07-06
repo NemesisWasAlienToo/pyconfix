@@ -91,6 +91,49 @@ def test_add_options_returns_and_appends():
     assert c.options == [o]
 
 
+def test_add_options_raises_on_duplicate_within_call():
+    c = Core()
+    with pytest.raises(ValueError):
+        c.add_options(
+            opt("X", ConfigOptionType.BOOL, default=True),
+            opt("X", ConfigOptionType.BOOL, default=False),
+        )
+
+
+def test_add_options_raises_on_duplicate_across_calls():
+    c = Core()
+    c.add_options(opt("X", ConfigOptionType.BOOL, default=True))
+    with pytest.raises(ValueError):
+        c.add_options(opt("X", ConfigOptionType.INT, default=1))
+
+
+def test_add_options_duplicate_check_is_case_insensitive():
+    c = Core()
+    c.add_options(opt("Flag", ConfigOptionType.BOOL, default=True))
+    with pytest.raises(ValueError):
+        c.add_options(opt("FLAG", ConfigOptionType.BOOL, default=False))
+
+
+def test_add_options_rejects_name_colliding_with_nested_child():
+    c = Core()
+    c.add_options(opt("G", ConfigOptionType.GROUP, options=[
+        opt("SUB", ConfigOptionType.BOOL, default=True),
+    ]))
+    with pytest.raises(ValueError):
+        c.add_options(opt("SUB", ConfigOptionType.INT, default=1))
+
+
+def test_add_options_rejected_call_leaves_state_unchanged():
+    c = Core()
+    c.add_options(opt("A", ConfigOptionType.BOOL, default=True))
+    with pytest.raises(ValueError):
+        # second option duplicates "A" -> whole call is rejected
+        c.add_options(opt("B", ConfigOptionType.BOOL, default=True),
+                      opt("A", ConfigOptionType.BOOL, default=False))
+    assert [o.name for o in c.options] == ["A"]   # "B" was not added
+    assert c._get("B") is None
+
+
 # --------------------------------------------------------------------------- #
 # _get lookup
 # --------------------------------------------------------------------------- #
@@ -163,6 +206,23 @@ def test_apply_enum_by_choice_string(core):
     core.apply_config({"MODE": "C"})
     assert core.MODE == "C"
     assert core._get("MODE").value == 2
+
+
+def test_apply_invalid_enum_value_raises_named_error(core):
+    # A stale/hand-edited config with a choice that no longer exists is a real
+    # error: raise a clear, named message rather than a bare "not in list".
+    with pytest.raises(ValueError) as ei:
+        core.apply_config({"MODE": "NO_LONGER_A_CHOICE"})
+    msg = str(ei.value)
+    assert "MODE" in msg
+    assert "NO_LONGER_A_CHOICE" in msg
+
+
+def test_apply_blank_enum_value_restores_default(core):
+    # An empty value is treated as "unset" and restores the default.
+    core.apply_config({"MODE": ""})
+    assert core.MODE == "B"                      # the default
+    assert core._get("MODE").value == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -300,14 +360,15 @@ def test_action_requires_unknown_token_raises_clean_attributeerror():
 
 
 # --------------------------------------------------------------------------- #
-# String dependency expressions supplied through the Python API
+# Dependencies via the Python API use callables; string expressions are reserved
+# for the JSON schema only.
 # --------------------------------------------------------------------------- #
 
-def test_add_options_string_dependency_is_evaluated():
+def test_add_options_callable_dependency_is_evaluated():
     c = Core()
     c.add_options(
         opt("F", ConfigOptionType.BOOL, default=True),
-        opt("N", ConfigOptionType.INT, default=1, dependencies="F"),
+        opt("N", ConfigOptionType.INT, default=1, dependencies=lambda cfg: cfg.F),
     )
     c.apply_config({})
     assert c._is_option_available(c._get("N")) is True
@@ -315,23 +376,11 @@ def test_add_options_string_dependency_is_evaluated():
     assert c._is_option_available(c._get("N")) is False
 
 
-def test_add_options_expression_dependency_is_evaluated():
-    c = Core()
-    c.add_options(
-        opt("LEVEL", ConfigOptionType.INT, default=5),
-        opt("HIGH", ConfigOptionType.BOOL, default=True, dependencies="LEVEL >= 3"),
-    )
-    c.apply_config({})
-    assert c._is_option_available(c._get("HIGH")) is True
-    c._get("LEVEL").value = 1
-    assert c._is_option_available(c._get("HIGH")) is False
-
-
-def test_action_option_string_dependency_disables_action():
+def test_action_option_callable_dependency_disables_action():
     c = Core()
     c.add_options(opt("F", ConfigOptionType.BOOL, default=False))
 
-    @action(c, dependencies="F")
+    @action(c, dependencies=lambda x: x.F)
     def gated(x):
         return 1
 
@@ -341,3 +390,12 @@ def test_action_option_string_dependency_disables_action():
     assert c.gated() == (None, [])
     c._get("F").value = True
     assert c.gated() == (1, ["gated"])
+
+
+def test_python_api_string_dependency_is_rejected():
+    # String dependency expressions are for the JSON schema; through the Python
+    # API a callable must be used, so a raw string is rejected when evaluated.
+    c = Core()
+    c.add_options(opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
+    with pytest.raises(ValueError):
+        c._is_option_available(c._get("N"))

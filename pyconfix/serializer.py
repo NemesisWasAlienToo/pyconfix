@@ -19,7 +19,6 @@ without touching the rest of the library. JSON is built in.
 
 import json
 import os
-import sys
 
 from .parser import BooleanExpressionParser
 from .option import ConfigOption, ConfigOptionType
@@ -103,10 +102,10 @@ def load_schema(core, schem_files):
 
 def _load_file(core, path):
     if not os.path.exists(path):
-        sys.exit(f"Config file '{path}' does not exist.")
+        raise ValueError(f"Config file '{path}' does not exist.")
     data = read(path)
     if len(data.keys()) != 1:
-        sys.exit(f"Json file {path} has more than one top entry")
+        raise ValueError(f"Json file {path} has more than one top entry")
 
     name, options = next(iter(data.items()))
     base_path = os.path.dirname(os.path.abspath(path))
@@ -300,9 +299,8 @@ def read_config_files(config_files):
             raise ValueError(f"Invalid config file: {config_file}")
         try:
             saved_config.update(read(config_file))
-        except json.JSONDecodeError:
-            print(f"Invalid json file: {config_file}")
-            exit(1)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid json file: {config_file}") from e
     return saved_config
 
 

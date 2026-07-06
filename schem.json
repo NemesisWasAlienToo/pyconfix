@@ -91,12 +91,12 @@
             }
         },
         "GROUP_4": {
-            "SUB_B": {
+            "SUB_D": {
                 "type": "bool",
                 "default": false
             },
             "GROUP_5": {
-                "SUB_C": false
+                "SUB_E": false
             }
         },
         "include": [

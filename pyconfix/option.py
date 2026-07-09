@@ -57,6 +57,9 @@ class ConfigOption:
         if option_type == ConfigOptionType.EXTERNAL and dependencies:
             raise ValueError(f"External option {name} cannot have dependencies or evaluator")
 
+        if option_type == ConfigOptionType.EXTERNAL and callable(default):
+            raise ValueError(f"External option {name} cannot have a callable default")
+
         self.name = name
         self.option_type = option_type
         self.default = default

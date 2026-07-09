@@ -83,20 +83,17 @@ class Core:
         or elsewhere in this one). Validation happens before anything is added,
         so a rejected call leaves the option tree unchanged.
         """
-        new_keys = set()
-
         def claim(option):
             key = option.name.upper()
-            if key in self.option_names or key in new_keys:
+            if key in self.option_names:
                 raise ValueError(f"Duplicate option name: '{option.name}'")
-            new_keys.add(key)
+            self.option_names.add(key)
             for child in option.options:
                 claim(child)
 
         for option in options:
             claim(option)
 
-        self.option_names |= new_keys
         self.options.extend(options)
         return options
 

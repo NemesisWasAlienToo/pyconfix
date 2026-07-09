@@ -54,14 +54,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The library no longer calls `sys.exit()`/`exit()` on bad input: loading a missing schema file, a schema with more than one top-level entry, or a corrupt saved-config JSON now raises `ValueError` so an embedding application can catch it instead of having its process terminated.
 - Applying a saved config whose enum value is not a valid choice now raises a clear, named `ValueError` (naming the option and its valid choices) instead of a bare `ValueError: '...' is not in list`. A blank/empty value still restores the option's default.
 
-### Deprecated
-- Empty
-
 ### Removed
 - Constructor no longer accepts `schem_files`, `output_file`, or `expanded`; `run()` no longer accepts `graphical`, `config_files`, or `overlay`.
-
-### Security
-- Empty
 
 ---
 

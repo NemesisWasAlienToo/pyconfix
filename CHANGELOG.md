@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
+- Empty
+
+### Changed
+- Empty
+
+### Fixed
+- Empty
+
+### Deprecated
+- Empty
+
+### Removed
+- Empty
+
+### Security
+- Empty
+
+---
+
+## [0.20.0]
+### Added
 - Explicit, chainable `load_schem()` and `apply_config()` steps on the runner (each returns the instance), so API users control when and in what order the schema is loaded and saved selections are applied.
 - Sensible defaults for the schema file (`pyconfixfile.json`) and config file (`output_config.json`) so the minimal example is a one-liner.
 - Decorator API (`action_option` / `group_option`) now lives on the runner.

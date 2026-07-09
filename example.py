@@ -1,10 +1,10 @@
-import time, argparse, sys
+import time, argparse, sys, os
 from pyconfix import pyconfix, ConfigOption, ConfigOptionType
 import platform
 
 ### This function saves the current configurations in a defconfig-like format.
 ### Custom save functions can be used to export the settings in any format.
-def custom_save(json_data, config, is_diff):
+def custom_save(json_data):
     with open("output_defconfig", 'w') as f:
         for key, value in json_data.items():
             if value is None or (isinstance(value, bool) and value == False):
@@ -17,7 +17,7 @@ def custom_save(json_data, config, is_diff):
 ### This function creates the config object making it accessible for use
 ### by external tools like conan and CMake.
 def create_config():
-    config = pyconfix(schem_files=["schem.json"], save_func=custom_save, expanded=True, show_disabled=True)
+    config = pyconfix()
 
     ### Aliases can be registered with a dedicated helper
     config.register_alias(
@@ -34,11 +34,6 @@ def create_config():
             name='OS',
             option_type=ConfigOptionType.EXTERNAL,
             default=platform.system()
-        ),
-        ConfigOption(
-            name='OS_LIVE',
-            option_type=ConfigOptionType.EXTERNAL,
-            default=lambda: platform.system()
         ),
         ConfigOption(
             name='PYTHON_EVALUATED',
@@ -88,6 +83,7 @@ def create_config():
         time.sleep(2)
         return True
     
+    config.load_schem(schem_files=["schem.json"])
     return config
 
 def parse_args():
@@ -151,31 +147,44 @@ def parse_args():
 
 def main():
     #################################################
-    ################ Parse arguments ################
+    # Parse arguments ###############################
     #################################################
     args = parse_args()
 
     #################################################
-    ############ Create pyconfix instance ###########
+    # Create pyconfix instance ######################
     #################################################
     config = create_config()
+
+    #################################################
+    # Apply configs #################################
+    #################################################
+    default_output_file = "output_config.json"
+    # Load the previous save only if it exists. On the first run there is none;
+    # pressing save in the TUI creates it, and later runs will load it.
+    if os.path.exists(default_output_file):
+        config.apply_config(config_files=[default_output_file])
+    config.apply_config(config_files=args.load, overlay=args.option)
     
     #################################################
-    ############## Run pyconfix examlpe #############
+    # Run pyconfix ##################################
     #################################################
-    ### Config can load files, overlays and run in either TUI or CLI mode
-    config.run(config_files=args.load, overlay=args.option, graphical=not args.cli)
-
-    ### Option values can be accessed as attributes.
-    ### Actions can then be run by calling them as methods.
-    ### Options can also be retrieved using the get method.
-    if args.cli:
+    if not args.cli:
+        config.run(output_file=default_output_file, show_disabled=True, save_func=custom_save)
+    else:
+        ### Option values can be accessed as attributes.
+        ### Actions can then be run by calling them as methods.
+        ### Options can also be retrieved using the get method.
         if args.run:
             value, trace = config.get(args.run)()
             print(f"Value: {value}")
             print(f"Trace: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
+
+        ### In headless mode there is no TUI save step, so persist the result
+        ### explicitly. This writes the JSON output file and runs custom_save.
+        config.save(default_output_file, save_func=custom_save)
 
 if __name__ == "__main__":
     main()

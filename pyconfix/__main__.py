@@ -1,7 +1,8 @@
 import argparse
-from .core import pyconfix
+import os
+from .runner import pyconfix
 
-VERSION = "0.10.6"
+VERSION = "0.20.0"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
@@ -36,11 +37,6 @@ def parse_args():
         "--dump",
         action="store_true",
         help="Dumps the current configuration to output"
-    )
-    parser.add_argument(
-        "--expanded",
-        action="store_true",
-        help="Default state of groups"
     )
     parser.add_argument(
         "--version",
@@ -81,34 +77,33 @@ def parse_args():
 def main():
     args = parse_args()
 
-    constructorArgs = {}
-    if args.schem_files and len(args.schem_files) > 0:
-        constructorArgs['schem_files'] = args.schem_files
-    if args.expanded:
-        constructorArgs['expanded'] = args.expanded
-    if args.show_disabled:
-        constructorArgs['show_disabled'] = args.show_disabled
-    if args.cache:
-        constructorArgs['output_file'] = args.cache
-    config = pyconfix(**constructorArgs)
-
-    runArgs = {}
-    if args.load:
-        runArgs['config_files'] = args.load
-    if args.option:
-        runArgs['overlay'] = args.option
-    if args.cli or args.print or args.dump:
-        runArgs['graphical'] = False
-    config.run(**runArgs)
-
     if args.print and args.dump:
         print("Incompatible flag combination: --print, --dump")
         exit(1)
 
-    if args.print:
+    output_file = "output_config.json"
+
+    # 1. Build the config and load the schema explicitly.
+    config = pyconfix()
+    config.load_schem(schem_files=args.schem_files or ["pyconfixfile.json"])
+
+    # 2. Apply saved selections: the cached output file (if present), then any
+    #    -l files and -o key=value overrides.
+    if os.path.exists(output_file):
+        config.apply_config(config_files=[output_file])
+    config.apply_config(config_files=args.load or [], overlay=args.option)
+
+    # 3. Either run the interactive TUI or answer the headless query.
+    if args.cli or args.print or args.dump:
+        if args.print:
             print(f"{args.print}: {config.get(args.print)}")
-    elif args.dump:
-        print(config.dump())
+        elif args.dump:
+            print(config.dump())
+        else:
+            # Pure CLI mode: persist the applied configuration.
+            config.save(output_file)
+    else:
+        config.run(output_file=output_file, show_disabled=args.show_disabled)
 
 if __name__ == "__main__":
     main()

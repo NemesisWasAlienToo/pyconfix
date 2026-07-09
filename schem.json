@@ -12,7 +12,8 @@
         },
         "SHORT_INT_TYPE_DEDUCED": 10,
         "INT_TYPE_DEDUCED": {
-            "default": 10
+            "default": 10,
+            "dependencies": "ENABLE_FEATURE_A"
         },
         "SHORT_STRING_TYPE_DEDUCED": "Hello there",
         "STRING_TYPE_DEDUCED": {
@@ -73,7 +74,6 @@
             "dependencies": "ENABLE_FEATURE_A && ((MEMORY_SIZE & 0xF) == 0xE)"
         },
         "GROUP_1": {
-            "type": "group",
             "dependencies": "ENABLE_FEATURE_A && ((STACK_SIZE + HEAP_SIZE) <= MEMORY_SIZE)",
             "options": {
                 "SUB_B": {
@@ -91,12 +91,12 @@
             }
         },
         "GROUP_4": {
-            "SUB_B": {
+            "SUB_D": {
                 "type": "bool",
                 "default": false
             },
             "GROUP_5": {
-                "SUB_C": false
+                "SUB_E": false
             }
         },
         "include": [

@@ -60,7 +60,7 @@ A minimal pyconfix script that can be run and also serve as a starting point for
 ```python
 # menu.py
 from pyconfix import pyconfix
-pyconfix().run()
+pyconfix().load_schem().apply_config().run()
 ```
 
 Then run it:
@@ -69,69 +69,75 @@ Then run it:
 python menu.py
 ```
 
+Loading the schema and applying a saved config are explicit, chainable steps
+(each returns the instance), and only `run()` starts the interactive TUI.
+`load_schem()` defaults to `pyconfixfile.json`. A config file passed to
+`apply_config()` must exist (a missing one raises), so to reload a previous save
+check that it's there first — see `example.py`, which loads `output_config.json`
+only if it exists and lets the TUI's save create it on the first run.
+
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
 The minimal example could be found in the __minimal_example.py__ script. To see a frther customized version you can check out __example.py__ script which uses the __schem.json__ file which uses more advanced features like aliases and tasks.
 
 ### Custom save function
 
-Want to emit something other than the default JSON? Pass a `save_func` callable when you create the instance. It receives the flattened config dict and the option tree, so you can write out any format you need:
+Want to emit something other than the default JSON? Pass a `save_func` callable to
+`run()`. It receives the flattened config dict, so you can write out any format
+you need:
 
 ```python
-def write_header(cfg, config, is_diff):
+def write_header(config_data):
     with open("config.h", "w") as f:
-        for key, value in cfg.items():
+        for key, value in config_data.items():
             f.write(f"#define {key} {value}\n")
 
-pyconfix(
-    schem_files=["schem.json"],
-    save_func=write_header,
-).run()
+pyconfix().load_schem(["schem.json"]).run(save_func=write_header)
 ```
 
 ## Headless / CLI mode
 
-Run the schema parser non‑interactively to dump a JSON config – handy for scripts and pipelines:
+Drive the schema parser non‑interactively – handy for scripts and pipelines. Just
+skip `run()` (which launches the TUI) and read values after loading/applying:
 
 ```bash
 python - <<'PY'
-import pyconfix, json
-cfg = pyconfix.pyconfix(
-    schem_files=["schem.json"],
-    output_file="cfg.json"
-)
-cfg.run(graphical=False, config_files=["prev.json"])
+import pyconfix
+cfg = pyconfix.pyconfix()
+cfg.load_schem(["schem.json"])
+cfg.apply_config(["prev.json"])   # apply a previously saved config (optional)
+print(cfg.dump())
 PY
 ```
 
 ## Python API
 
-If you’d rather drive everything from code, import the class:
+If you’d rather drive everything from code, import the class and load/apply
+explicitly:
 
 ```python
 from pyconfix import pyconfix
 
-cfg = pyconfix(
-    schem_files=["main.json", "extras.json"],
-    config_files=["prev.json"],      # load an existing config (optional)
-    output_file="final.json",     # where to write when you press "s"
-    expanded=True,                 # expand all groups initially
-    show_disabled=True             # show options that currently fail deps
-)
-cfg.run()                # interactive TUI
-print(cfg.get("HOST")) # access a value programmatically
-print(cfg.HOST) # The same as
+cfg = pyconfix()
+cfg.load_schem(["main.json", "extras.json"])   # parse schema files into options
+cfg.apply_config(["prev.json"])                # apply a saved config (optional)
+cfg.run(output_file="final.json", show_disabled=True)  # interactive TUI
+print(cfg.get("HOST"))   # access a value programmatically
+print(cfg.HOST)          # the same
 ```
 
-Constructor signature for reference:
+Method signatures for reference (`load_schem` and `apply_config` are chainable and
+return the instance):
 
 ```python
-pyconfix(
-    schem_files: list[str] | None = ["pyconfixfile.json"],
-    output_file: str = "output_config.json",
-    save_func: Callable[[dict, "pyconfix", bool], None] | None = None,
-    expanded: bool = False,
+pyconfix()
+
+load_schem(schem_files: list[str] = ["pyconfixfile.json"])
+# named config files must exist (missing -> ValueError); no files -> defaults kept
+apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
+
+run(output_file: str = "output_config.json",
     show_disabled: bool = False,
-)
+    save_func: Callable[[dict], None] | None = None)
 ```
 
 ## Actions
@@ -153,13 +159,14 @@ def deploy(x):
     print("Deploying...")
     return True
 
-cfg = pyconfix(schem_files=["schem.json"], expanded=True, show_disabled=True)
-cfg.options.extend([
+cfg = pyconfix()
+cfg.load_schem(["schem.json"])
+cfg.add_options(
     ConfigOption(
         name='build',
         option_type='action',
         description='Builds the software',
-        dependencies='ENABLE_FEATURE_A',
+        dependencies=lambda x: x.ENABLE_FEATURE_A,
         default=build,
         requires=lambda x: x.LOG_LEVEL
     ),
@@ -167,11 +174,12 @@ cfg.options.extend([
         name='deploy',
         option_type='action',
         description='Deploys the software',
-        dependencies='ENABLE_FEATURE_A',
+        dependencies=lambda x: x.ENABLE_FEATURE_A,
         default=deploy,
         requires=lambda x: x.build()
     ),
-])
+)
+cfg.apply_config()
 ```
 
 ### Running actions
@@ -184,10 +192,11 @@ cfg.options.extend([
   python menu.py --cli --run build
   ```
 
-* **Programmatically**:
+* **Programmatically** (no `run()` needed — just load, apply, then call):
 
   ```python
-  cfg.run(graphical=False)
+  cfg.load_schem(["schem.json"])
+  cfg.apply_config()
   result = cfg.get("build")()
   # or simply
   result = cfg.build()
@@ -343,24 +352,23 @@ VALUE>>1 == 0                         # right shift + equality
 ## Advanced usage
 
 ```python
-import json, pyconfix
+import pyconfix
 
-def save_as_header(cfg, _):
+def save_as_header(config_data):
     with open("config.h", "w") as f:
-        for k, v in cfg.items():
+        for k, v in config_data.items():
             f.write(f"#define {k} {v}\n")
 
-pyconfix.pyconfix(
-    schem_files=["schem.json", "extras.json"],
+pyconfix.pyconfix().load_schem(["schem.json", "extras.json"]).run(
     output_file="settings.json",
-    save_func=save_as_header
-).run()
+    save_func=save_as_header,
+)
 ```
 
 ## Export in any format
 The configurations can be exported in any desirable format by using custom save functions. Here is an example pf the current configurations bein exported in the kconfig format:
 ```py
-def custom_save(json_data, config, is_diff):
+def custom_save(json_data):
     with open("output_defconfig", 'w') as f:
         for key, value in json_data.items():
             if value == None or (isinstance(value, bool) and value == False):
@@ -374,11 +382,16 @@ def custom_save(json_data, config, is_diff):
 # The rest of the code
 # ...
 
-config = pyconfix(schem_files=["schem.json"], save_func=custom_save)
+config = pyconfix()
+config.load_schem(["schem.json"])
 
 # ...
 # The rest of the code
 # ...
+
+# hand the save hook to run(); in headless mode write it yourself with
+# serializer.write_config(output_file, config.dump(), custom_save)
+config.run(save_func=custom_save)
 ```
 
 ## Practical remarks
@@ -386,8 +399,9 @@ config = pyconfix(schem_files=["schem.json"], save_func=custom_save)
 There are multiple ways of attain the value of an option. Options can be treated as config's attributes or their value can be retrieved using the `get` function:
 
 ```py
-config = pyconfix(schem_files=["schem.json"])
-config.run()
+config = pyconfix()
+config.load_schem(["schem.json"])
+config.apply_config()
 
 # Options can be treated as attributes
 print(f"{config.FEATURES_NAME}")
@@ -410,7 +424,8 @@ from conan import ConanFile
 from pyconfix import pyconfix
 
 config = pyconfix()
-config.run(graphical=False)
+config.load_schem()
+config.apply_config()
 
 class MyProject(ConanFile):
     name = "myproject"
@@ -437,7 +452,7 @@ from conan import ConanFile
 from pyconfix import pyconfix
 
 config = my_script.get_config()
-config.run(graphical=False)
+config.apply_config()
 
 class MyProject(ConanFile):
     name = "myproject"

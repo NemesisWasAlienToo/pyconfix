@@ -83,6 +83,28 @@ def test_option_from_alias_unknown_raises():
         c.option_from_alias("nope", name="X")
 
 
+def test_register_alias_non_enum_raises():
+    c = Core()
+    with pytest.raises(ValueError):
+        c.register_alias("weird", ConfigOptionType.BOOL, ["A", "B"])
+
+
+def test_register_alias_skip_duplicate_returns_existing():
+    c = Core()
+    o = ConfigOption(name="tri", option_type=ConfigOptionType.ENUM, choices=["A", "B"])
+    first = c._register_alias(o)
+    again = c._register_alias(o, skip_duplicate_check=True)
+    assert again is first
+
+
+def test_option_from_alias_builtin_type_name():
+    # An unregistered name that is a built-in ConfigOptionType is accepted.
+    c = Core()
+    o = c.option_from_alias("bool", name="X", default=True)
+    assert o.name == "X"
+    assert o.option_type == ConfigOptionType.BOOL
+
+
 def test_add_options_returns_and_appends():
     c = Core()
     o = opt("A", ConfigOptionType.BOOL, default=True)
@@ -345,6 +367,53 @@ def test_action_body_unknown_token_raises_clean_attributeerror():
     msg = str(ei.value)
     assert "NoneType" not in msg          # not the masked None deref
     assert "NO_SUCH_OPTION" in msg        # names the offending key
+
+
+def test_action_body_reads_other_option_types():
+    # An action body reaches other options through the execution session, which
+    # resolves enum -> choice string, group -> children list, and plain values.
+    c = Core()
+    c.add_options(
+        opt("MODE", ConfigOptionType.ENUM, default="B", choices=["A", "B", "C"]),
+        opt("FLAG", ConfigOptionType.BOOL, default=True),
+        opt("G", ConfigOptionType.GROUP, options=[
+            opt("SUB", ConfigOptionType.BOOL, default=False),
+        ]),
+    )
+
+    @action(c)
+    def probe(x):
+        return (x.MODE, x.FLAG, x.G)
+
+    c.apply_config({})
+    (mode, flag, group), _ = c.probe()
+    assert mode == "B"                              # enum -> choice string
+    assert flag is True                             # plain value
+    assert [o.name for o in group] == ["SUB"]       # group -> children list
+
+
+def test_action_body_reads_unavailable_option_and_action():
+    # Inside a running action, an unavailable non-action reads as None and an
+    # unavailable action reads as a no-op callable returning None.
+    c = Core()
+    c.add_options(
+        opt("FLAG", ConfigOptionType.BOOL, default=False),
+        opt("N", ConfigOptionType.INT, default=5, dependencies=lambda cfg: cfg.FLAG),
+    )
+
+    @action(c, dependencies=lambda x: x.FLAG)
+    def gated(x):
+        return 99
+
+    @action(c)
+    def probe(x):
+        return (x.N, x.gated)
+
+    c.apply_config({})
+    (n_val, gated_ref), _ = c.probe()
+    assert n_val is None                # unavailable non-action -> None
+    assert callable(gated_ref)
+    assert gated_ref() is None          # unavailable action -> lambda: None
 
 
 def test_action_requires_unknown_token_raises_clean_attributeerror():

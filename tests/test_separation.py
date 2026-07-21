@@ -298,6 +298,14 @@ def test_grouped_action_duplicate_name_raises():
             return 2
 
 
+def test_runner_missing_core_attr_raises_attributeerror():
+    # Before _core is set (e.g. bare __new__), the forwarding __getattr__ must
+    # not recurse — it raises AttributeError for the '_core' name itself.
+    bare = pyconfix.__new__(pyconfix)
+    with pytest.raises(AttributeError):
+        _ = bare._core
+
+
 def test_decorator_name_collides_with_add_options():
     cfg = pyconfix()
     cfg.add_options(ConfigOption(name="build", option_type=ConfigOptionType.BOOL, default=True))

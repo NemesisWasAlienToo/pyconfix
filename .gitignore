@@ -7,4 +7,7 @@ dist
 build
 .claude/
 .security-notes.json
-.coverage
+.coverage*
+coverage.xml
+htmlcov
+.pytest_cache

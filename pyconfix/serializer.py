@@ -189,7 +189,7 @@ def _parse_option(core, name, option_data, base_path=None):
             dependencies=option_data.get('dependencies', custom_type.dependencies),
         )
     if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
-        option.options = parse_options2(core, option_data['options'], base_path)
+        option.options = parse_options(core, option_data['options'], base_path)
     elif option.option_type == ConfigOptionType.ENUM:
         # Built as STRING above, so ConfigOption.__init__ did not coerce an
         # out-of-range default; do it here (mirroring the ENUM constructor path)

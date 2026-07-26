@@ -99,28 +99,21 @@ def load_schema(core, schem_files):
         _load_file(core, os.path.join(os.getcwd(), schem_file))
     finalize_dependencies(core)
 
-
 def _load_file(core, path):
+    name, parsed = _load_file_options(core, path)
+    core.config_name = name
+    core.add_options(*parsed)
+
+def _load_file_options(core, path):
     if not os.path.exists(path):
         raise ValueError(f"Config file '{path}' does not exist.")
     data = read(path)
     if len(data.keys()) != 1:
         raise ValueError(f"Json file {path} has more than one top entry")
-
     name, options = next(iter(data.items()))
     base_path = os.path.dirname(os.path.abspath(path))
-
-    # Parse first: this resolves any `include` directives (at any nesting level),
-    # loading their options into the manager. Assign config_name afterwards so
-    # the outermost file's name wins over any included file's name.
     parsed = parse_options(core, options, base_path)
-    core.config_name = name
-    core.add_options(*parsed)
-
-
-# --------------------------------------------------------------------------- #
-# Compact-syntax parsing: schema dict -> ConfigOption objects
-# --------------------------------------------------------------------------- #
+    return name, parsed
 
 def parse_options(core, options_data, base_path=None):
     """Build the top-level options for one schema section into a list.
@@ -139,11 +132,11 @@ def parse_options(core, options_data, base_path=None):
                 include_path = os.path.join(base_path, include_file)
                 if not os.path.exists(include_path):
                     raise ValueError(f"A non-existing file was included: {include_path}")
-                _load_file(core, include_path)
+                name, options = _load_file_options(core, include_path)
+                parsed_options.extend(options)
             continue
         parsed_options.append(_parse_option(core, key, value, base_path))
     return parsed_options
-
 
 def _parse_option(core, name, option_data, base_path=None):
     if not isinstance(option_data, dict):

@@ -99,8 +99,10 @@
                 "SUB_E": false
             }
         },
-        "include": [
-            "extra_schem.json"
-        ]
+        "GROUP_EXTERNAL": {
+            "include": [
+                "extra_schem.json"
+            ]
+        }
     }
 }

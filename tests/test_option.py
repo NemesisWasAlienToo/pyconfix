@@ -58,6 +58,13 @@ def test_enum_choice_with_whitespace_raises():
                      default="a", choices=["a", "b c"])
 
 
+def test_enum_choices_must_be_a_list_not_other_sequence():
+    # A non-empty, non-list sequence (tuple) is rejected as choices.
+    with pytest.raises(ValueError):
+        ConfigOption(name="E", option_type=ConfigOptionType.ENUM,
+                     default="a", choices=("a", "b"))
+
+
 # --------------------------------------------------------------------------- #
 # Validation errors
 # --------------------------------------------------------------------------- #

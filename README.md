@@ -1,5 +1,8 @@
 # pyconfix
 
+[![Tests](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml/badge.svg)](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/NemesisWasAlienToo/pyconfig/branch/master/graph/badge.svg)](https://codecov.io/gh/NemesisWasAlienToo/pyconfig)
+
 > A single‑file, curses‑powered, highly customizable, menuconfig‑style configuration editor for any project.
 
 ---

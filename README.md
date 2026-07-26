@@ -1,7 +1,8 @@
 # pyconfix
 
 [![Tests](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml/badge.svg)](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/NemesisWasAlienToo/pyconfig/branch/master/graph/badge.svg)](https://codecov.io/gh/NemesisWasAlienToo/pyconfig)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > A single‑file, curses‑powered, highly customizable, menuconfig‑style configuration editor for any project.
 
@@ -17,7 +18,7 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 
 * Hierarchical options – `bool`, `int`, `string`, `enum`, recursive groups.
 * Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!`, comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
-* Composable schemas – `"include"`: split large configs.
+* Composable schemas – `"include"` at any level: split large configs, even factoring a single group's contents into its own file.
 * Instant search (`/`).
 * ⏹ Abort key – Ctrl+A exits search, input boxes etc.
 * Live validation – options auto‑hide when dependencies fail.
@@ -247,8 +248,23 @@ name. Its value maps each **option name** to that option's definition:
 ```
 
 Because each option is keyed by its name, names are unique and must not contain
-whitespace. `"include"` is a reserved key (a list of other schema files to pull
-in) and lives alongside the options.
+whitespace. `"include"` is a reserved key — a list of other schema files to pull
+in — and it lives alongside the options.
+
+**Includes are resolved where they sit.** An `"include"` at the top level adds
+the referenced files' options at the top level; an `"include"` placed inside a
+group's options adds them as members of that group. The included file's own
+top-level name is ignored — only its options are merged in, at the include's
+location. This lets you factor a group's contents out into its own file:
+
+```json
+"Network": {
+  "HOST": "localhost",
+  "include": ["network_extra.json"]
+}
+```
+
+Every option defined in `network_extra.json` becomes a child of `Network`.
 
 ### Shorthands & type inference
 

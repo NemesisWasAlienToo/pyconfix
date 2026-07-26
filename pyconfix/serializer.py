@@ -120,8 +120,9 @@ def parse_options(core, options_data, base_path=None):
 
     Nested group children are attached to their group; only the returned
     top-level options should be handed to ``core.add_options``. An ``include``
-    directive (at any nesting level) loads the referenced files' options into the
-    manager immediately — before the including section's own options.
+    directive is resolved in place: the referenced files' options are inserted at
+    the include's location, so an include inside a group's options becomes part
+    of that group. The included file's own top-level name is discarded.
     """
     if base_path is None:
         base_path = os.getcwd()

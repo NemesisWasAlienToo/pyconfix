@@ -377,6 +377,47 @@ def test_schema_enum_matches_direct_configoption_coercion():
 
 
 # --------------------------------------------------------------------------- #
+# short field aliases (deps/desc/req/opts/def)
+# --------------------------------------------------------------------------- #
+
+def test_field_alias_deps_maps_to_dependencies():
+    core = Core()
+    _load_dict(core, {"A": True, "N": {"type": "int", "default": 5, "deps": "A"}})
+    n = core._get("N")
+    assert callable(n.dependencies)                 # compiled from the expression
+    assert core._is_option_available(n) is True     # A is True
+    core._get("A").value = False
+    assert core._is_option_available(n) is False
+
+
+def test_field_aliases_def_desc_opts():
+    opts = serializer.parse_options(Core(), {
+        "N": {"type": "int", "def": 7, "desc": "count"},
+        "G": {"opts": {"CHILD": True}},
+    })
+    by_name = {o.name: o for o in opts}
+    assert by_name["N"].default == 7               # def -> default
+    assert by_name["N"].description == "count"     # desc -> description
+    assert by_name["G"].option_type == ConfigOptionType.GROUP
+    assert by_name["G"].options[0].name == "CHILD"  # opts -> options
+
+
+def test_field_alias_conflicts_with_canonical_raises():
+    with pytest.raises(ValueError):
+        serializer.parse_options(
+            Core(), {"N": {"type": "int", "default": 1, "deps": "A", "dependencies": "B"}})
+
+
+def test_field_alias_matches_canonical_result():
+    aliased = serializer.parse_options(
+        Core(), {"N": {"type": "int", "def": 3, "desc": "d", "deps": "true"}})[0]
+    canonical = serializer.parse_options(
+        Core(), {"N": {"type": "int", "default": 3, "description": "d", "dependencies": "true"}})[0]
+    assert aliased.default == canonical.default
+    assert aliased.description == canonical.description
+
+
+# --------------------------------------------------------------------------- #
 # curses-free headless guarantee
 # --------------------------------------------------------------------------- #
 

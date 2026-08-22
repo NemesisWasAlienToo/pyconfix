@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- Empty
+- Short field aliases in the JSON schema: `deps` (`dependencies`), `desc` (`description`), `def` (`default`), and `opts` (`options`). Setting both a field and its alias on the same option raises an error; the short forms are reserved keys like the canonical names.
 
 ### Changed
 - Empty

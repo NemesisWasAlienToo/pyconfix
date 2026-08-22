@@ -288,16 +288,21 @@ no value to infer from.
 
 Any option may be written in long form with these keys:
 
-| Key            | Applies to       | Notes                                              |
-| -------------- | ---------------- | -------------------------------------------------- |
-| `type`         | all              | `bool`, `int`, `string`, `enum`, `group`, `action`, or an alias |
-| `default`      | leaf options     | initial value (the chosen string for `enum`)       |
-| `choices`      | `enum`           | list of allowed values                             |
-| `description`  | all              | shown on the description page (`Ctrl+D`)           |
-| `dependencies` | all              | expression controlling availability (see below)   |
-| `data`         | all              | arbitrary payload passed through to your save hook |
-| `options`      | `group`          | nested options (or just nest them directly)        |
-| `requires`     | `action`/`group` | predicate callable (Python API only)               |
+| Key            | Short  | Applies to       | Notes                                              |
+| -------------- | ------ | ---------------- | -------------------------------------------------- |
+| `type`         | —      | all              | `bool`, `int`, `string`, `enum`, `group`, `action`, or an alias |
+| `default`      | `def`  | leaf options     | initial value (the chosen string for `enum`)       |
+| `choices`      | —      | `enum`           | list of allowed values                             |
+| `description`  | `desc` | all              | shown on the description page (`Ctrl+D`)           |
+| `dependencies` | `deps` | all              | expression controlling availability (see below)   |
+| `data`         | —      | all              | arbitrary payload passed through to your save hook |
+| `options`      | `opts` | `group`          | nested options (or just nest them directly)        |
+| `requires`     | —      | `action`/`group` | predicate callable (Python API only)               |
+
+The **Short** column lists an accepted alias for the wordier fields — write
+`"deps"` instead of `"dependencies"`, `"desc"`, `"def"`, or `"opts"`. Setting
+both a field and its alias on the same option is an error. Like the canonical
+keys, these short forms are reserved and can't be used as option names.
 
 ### Supported option types
 

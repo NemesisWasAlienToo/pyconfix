@@ -74,25 +74,21 @@ class pyconfix:
 
             def action_option(self, name=None, dependencies=None, requires=None):
                 def decorator(func):
-                    option_name = name or func.__name__
-                    # Reserve the name so decorator-added actions share the same
-                    # global uniqueness guarantee as add_options / schema loading.
-                    core._claim_name(option_name)
                     new_option = ConfigOption(
-                        name=option_name,
+                        name=name or func.__name__,
                         option_type=ConfigOptionType.ACTION,
                         default=func,
                         dependencies=dependencies,
                         requires=requires,
                         description=func.__doc__ or ""
                     )
-                    self.group.options.append(new_option)
+                    # Same add path as everything else: it enforces the global
+                    # name uniqueness and _get index. `parent` places the action
+                    # inside its group (or top level when there is no group).
+                    core.add_options(new_option, parent=self.group)
                     return func
                 return decorator
-        if group is not None:
-            return GroupProxy(group)
-        else:
-            return GroupProxy(self._core)
+        return GroupProxy(group)
 
     def action_option(self, name=None, dependencies=None, requires=None):
         """
@@ -118,18 +114,13 @@ class pyconfix:
             '''Action description'''
             ...
         """
-        # Reserve the group name so it shares the same global uniqueness
-        # guarantee as add_options / schema loading.
-        self._core._claim_name(name)
-        self._core.options.append(ConfigOption(
+        group_option = ConfigOption(
             name=name,
             option_type=ConfigOptionType.GROUP,
             dependencies=dependencies,
             options=[]
-        ))
-
-        # Get reference to the newly added option
-        group_option = self._core.options[-1]
+        )
+        self._core.add_options(group_option)
         return self._create_action_decorator(group=group_option)
 
     def save(self, output_file="output_config.json", output_diff=False, save_func=None):

@@ -115,6 +115,32 @@ def _load_file_options(core, path):
     parsed = parse_options(core, options, base_path)
     return name, parsed
 
+# Short aliases accepted for the wordier option fields, so a schema can say e.g.
+# "deps" instead of "dependencies". Like the canonical field names, these keys
+# are reserved and cannot be used as option names.
+_FIELD_ALIASES = {
+    "deps": "dependencies",
+    "desc": "description",
+    "opts": "options",
+    "def": "default",
+}
+
+
+def _normalize_fields(name, option_data):
+    """Rewrite any short field aliases (e.g. ``deps``) to their canonical names.
+
+    Raises if both an alias and its canonical field are set on the same option.
+    """
+    normalized = dict(option_data)
+    for alias, canonical in _FIELD_ALIASES.items():
+        if alias in normalized:
+            if canonical in normalized:
+                raise ValueError(
+                    f"Option '{name}' sets both '{alias}' and '{canonical}'")
+            normalized[canonical] = normalized.pop(alias)
+    return normalized
+
+
 def parse_options(core, options_data, base_path=None):
     """Build the top-level options for one schema section into a list.
 
@@ -145,6 +171,8 @@ def _parse_option(core, name, option_data, base_path=None):
             option_data = {'choices': option_data}
         else:
             option_data = {'default': option_data}
+
+    option_data = _normalize_fields(name, option_data)
 
     option_type_name = ''
     def_value = option_data.get('default', None)

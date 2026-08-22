@@ -156,6 +156,41 @@ def test_add_options_rejected_call_leaves_state_unchanged():
     assert c._get("B") is None
 
 
+def test_add_options_rejected_call_name_is_reusable():
+    # A name from a rejected call must not linger in the index; validate-then-
+    # commit means "NEW" was never registered, so it can still be added later.
+    c = Core()
+    c.add_options(opt("A", ConfigOptionType.BOOL, default=True))
+    with pytest.raises(ValueError):
+        c.add_options(opt("NEW", ConfigOptionType.BOOL, default=True),
+                      opt("A", ConfigOptionType.BOOL, default=False))
+    c.add_options(opt("NEW", ConfigOptionType.BOOL, default=True))
+    assert c._get("NEW").name == "NEW"
+
+
+def test_add_options_with_parent_adds_child():
+    c = Core()
+    g = opt("G", ConfigOptionType.GROUP, options=[])
+    c.add_options(g)
+    child = opt("CHILD", ConfigOptionType.BOOL, default=True)
+    c.add_options(child, parent=g)
+    assert child in g.options          # nested under the group
+    assert child not in c.options      # not added at the top level
+    assert c._get("CHILD") is child    # indexed for O(1) lookup
+
+
+def test_add_options_with_parent_rejects_duplicate():
+    c = Core()
+    g = opt("G", ConfigOptionType.GROUP, options=[])
+    c.add_options(g)
+    c.add_options(opt("CHILD", ConfigOptionType.BOOL, default=True), parent=g)
+    # same name, whether re-added into the group or at the top level
+    with pytest.raises(ValueError):
+        c.add_options(opt("CHILD", ConfigOptionType.INT, default=1), parent=g)
+    with pytest.raises(ValueError):
+        c.add_options(opt("CHILD", ConfigOptionType.INT, default=1))
+
+
 # --------------------------------------------------------------------------- #
 # _get lookup
 # --------------------------------------------------------------------------- #

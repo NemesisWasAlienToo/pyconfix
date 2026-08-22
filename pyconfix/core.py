@@ -25,9 +25,10 @@ class Core:
         self.options = []
         self.aliases = {}
         self.config_name = ""
-        # Names of every registered option (upper-cased), kept across calls so
-        # duplicates are rejected globally, not just within a single add.
-        self.option_names = set()
+        # Map of every registered option name (upper-cased) -> the option
+        # itself. Kept across calls so duplicate names are rejected globally,
+        # and used as an O(1) index for `_get` instead of walking the tree.
+        self.option_map = {}
 
     def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
         """Register an alias and guard against accidental duplicates."""
@@ -74,40 +75,36 @@ class Core:
                 raise ValueError(f"Alias '{alias_name}' is not registered. Known aliases: {known}")
         return custom_type.clone_with(**kwargs)
 
-    def add_options(self, *options):
+    def add_options(self, *options, parent=None):
         """
         Append ConfigOption instances, registering their names — and the names
         of any nested group children — so names stay globally unique.
+
+        By default the options are added at the top level; pass ``parent`` (a
+        group option) to add them as its children instead. Either way every name
+        is indexed for O(1) lookup.
 
         Raises ValueError if a name is already registered (from an earlier call
         or elsewhere in this one). Validation happens before anything is added,
         so a rejected call leaves the option tree unchanged.
         """
+        new_entries = {}
+
         def claim(option):
             key = option.name.upper()
-            if key in self.option_names:
+            if key in self.option_map or key in new_entries:
                 raise ValueError(f"Duplicate option name: '{option.name}'")
-            self.option_names.add(key)
+            new_entries[key] = option
             for child in option.options:
                 claim(child)
 
         for option in options:
             claim(option)
 
-        self.options.extend(options)
+        self.option_map.update(new_entries)
+        target = parent.options if parent is not None else self.options
+        target.extend(options)
         return options
-
-    def _claim_name(self, name):
-        """Reserve a single option name, raising if it is already registered.
-
-        Used when options are appended one at a time (e.g. the decorator API)
-        rather than through :meth:`add_options`, so those names take part in the
-        same global uniqueness guarantee.
-        """
-        key = name.upper()
-        if key in self.option_names:
-            raise ValueError(f"Duplicate option name: '{name}'")
-        self.option_names.add(key)
 
     def _apply_config_to_options(self, options, saved_config):
         for option in options:
@@ -226,20 +223,9 @@ class Core:
         return opt.value
 
     def _get(self, key):
-        def get_impl(key, options_list=self.options):
-            key_upper = key.upper()
-            for opt in options_list:
-                if opt.name.upper() == key_upper:
-                    return True, opt
-                if opt.option_type == ConfigOptionType.GROUP:
-                    found, value = get_impl(key, opt.options)
-                    if found:
-                        return True, value
-            return False, None
-        found, value = get_impl(key)
-        if not found:
-            return None
-        return value
+        # O(1) lookup via the name index, which holds every option (top-level
+        # and nested group children) registered on this manager.
+        return self.option_map.get(key.upper())
 
     # ----------------------------------------------------------------------- #
     # Applying selections and producing output data

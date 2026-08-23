@@ -159,7 +159,7 @@ def main():
     #################################################
     # Apply configs #################################
     #################################################
-    default_output_file = "output_config.json"
+    default_output_file = "pyconfix_output_config.json"
     # Load the previous save only if it exists. On the first run there is none;
     # pressing save in the TUI creates it, and later runs will load it.
     if os.path.exists(default_output_file):

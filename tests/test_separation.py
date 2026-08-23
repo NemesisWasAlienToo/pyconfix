@@ -83,7 +83,7 @@ def test_read_config_files_missing_raises():
 
 def test_apply_config_with_missing_default_falls_back_to_defaults(written_schema):
     # pyconfix().load_schem().apply_config() must not crash when the default
-    # output_config.json does not exist yet (fresh checkout) — the default is
+    # pyconfix_output_config.json does not exist yet (fresh checkout) — the default is
     # loaded only if present.
     cfg = pyconfix()
     cfg.load_schem(["sep.json"])

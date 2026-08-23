@@ -123,7 +123,7 @@ class pyconfix:
         self._core.add_options(group_option)
         return self._create_action_decorator(group=group_option)
 
-    def save(self, output_file="output_config.json", output_diff=False, save_func=None):
+    def save(self, output_file="pyconfix_output_config.json", output_diff=False, save_func=None):
         """Write the current configuration to ``output_file``.
 
         Writes the full dump, or only the diff from defaults when ``output_diff``
@@ -134,7 +134,7 @@ class pyconfix:
         serializer.write_config(output_file, config_data, save_func)
         return config_data
 
-    def run(self, output_file="output_config.json", show_disabled=False, save_func=None):
+    def run(self, output_file="pyconfix_output_config.json", show_disabled=False, save_func=None):
         """
         Run the interactive TUI configuration process.
         """

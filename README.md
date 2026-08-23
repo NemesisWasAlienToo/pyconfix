@@ -77,7 +77,7 @@ Loading the schema and applying a saved config are explicit, chainable steps
 (each returns the instance), and only `run()` starts the interactive TUI.
 `load_schem()` defaults to `pyconfixfile.json`. A config file passed to
 `apply_config()` must exist (a missing one raises), so to reload a previous save
-check that it's there first — see `example.py`, which loads `output_config.json`
+check that it's there first — see `example.py`, which loads `pyconfix_output_config.json`
 only if it exists and lets the TUI's save create it on the first run.
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
@@ -129,6 +129,14 @@ print(cfg.get("HOST"))   # access a value programmatically
 print(cfg.HOST)          # the same
 ```
 
+Or done in one liner:
+
+```py
+from pyconfix import pyconfix
+
+pyconfix().load_schem().apply_config().run()
+```
+
 Method signatures for reference (`load_schem` and `apply_config` are chainable and
 return the instance):
 
@@ -139,7 +147,7 @@ load_schem(schem_files: list[str] = ["pyconfixfile.json"])
 # named config files must exist (missing -> ValueError); no files -> defaults kept
 apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
 
-run(output_file: str = "output_config.json",
+run(output_file: str = "pyconfix_output_config.json",
     show_disabled: bool = False,
     save_func: Callable[[dict], None] | None = None)
 ```
@@ -297,12 +305,20 @@ Any option may be written in long form with these keys:
 | `dependencies` | `deps` | all              | expression controlling availability (see below)   |
 | `data`         | —      | all              | arbitrary payload passed through to your save hook |
 | `options`      | `opts` | `group`          | nested options (or just nest them directly)        |
-| `requires`     | —      | `action`/`group` | predicate callable (Python API only)               |
+| `requires`     | —      | `action`/`group` | predicate callable — **Python API only** (see note) |
 
 The **Short** column lists an accepted alias for the wordier fields — write
 `"deps"` instead of `"dependencies"`, `"desc"`, `"def"`, or `"opts"`. Setting
-both a field and its alias on the same option is an error. Like the canonical
-keys, these short forms are reserved and can't be used as option names.
+both a field and its alias on the same option is an error.
+
+**Reserved keys.** All of the keys above (and their short aliases, plus
+`include`) are reserved: using one as an option **name** raises an error, since a
+name and a field share the same JSON object. Matching is exact and lowercase, so
+an option may still be named `TYPE` or `DATA` — just not `type` or `data`.
+
+**`requires` is Python-only for now.** It must be a callable, which JSON cannot
+express, so `requires` in a schema file raises a clear error; define it through
+the Python API instead. (Schema support may come in a future release.)
 
 ### Supported option types
 

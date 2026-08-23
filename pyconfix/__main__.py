@@ -1,8 +1,7 @@
 import argparse
 import os
+from ._version import __version__ as VERSION
 from .runner import pyconfix
-
-VERSION = "0.20.0"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
@@ -81,7 +80,7 @@ def main():
         print("Incompatible flag combination: --print, --dump")
         exit(1)
 
-    output_file = "output_config.json"
+    output_file = "pyconfix_output_config.json"
 
     # 1. Build the config and load the schema explicitly.
     config = pyconfix()

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- Short field aliases in the JSON schema: `deps` (`dependencies`), `desc` (`description`), `def` (`default`), and `opts` (`options`). Setting both a field and its alias on the same option raises an error; the short forms are reserved keys like the canonical names.
+- Empty
 
 ### Changed
 - Empty
@@ -24,6 +24,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Security
 - Empty
+
+---
+
+## [1.0.0]
+First stable release. The public Python API and the JSON schema syntax are now considered stable.
+
+### Changed
+- Default output file is now `pyconfix_output_config.json`.
+- Schema field names — and their short aliases and `include` — are reserved: using one as an option **name** now raises a clear error instead of being silently misparsed. Matching is exact/lowercase, so `TYPE` or `DATA` are still valid names.
+- Version is now sourced from a single `pyconfix.__version__`, so the CLI (`pyconfix --version`) and the package metadata can no longer drift.
+
+### Fixed
+- `requires` in a JSON schema now raises a clear "not supported in the JSON schema; define it via the Python API" error instead of a confusing option-construction failure. (Schema support may return in a later release.)
+
+### Removed
+- Dropped a stale, broken `test.py` script from the repository root.
+
+---
+
+## [0.21.0]
+### Added
+- Short field aliases in the JSON schema: `deps` (`dependencies`), `desc` (`description`), `def` (`default`), and `opts` (`options`). Setting both a field and its alias on the same option raises an error; the short forms are reserved keys like the canonical names.
 
 ---
 

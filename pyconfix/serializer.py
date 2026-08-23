@@ -125,6 +125,15 @@ _FIELD_ALIASES = {
     "def": "default",
 }
 
+# Every key the schema parser treats as an option field (canonical names, their
+# short aliases, and the `include` directive). These are reserved: they cannot be
+# used as option names, since a name and a field share the same dict namespace.
+_RESERVED_NAMES = (
+    {"type", "default", "choices", "description", "data",
+     "dependencies", "requires", "options", "include"}
+    | set(_FIELD_ALIASES)
+)
+
 
 def _normalize_fields(name, option_data):
     """Rewrite any short field aliases (e.g. ``deps``) to their canonical names.
@@ -162,6 +171,10 @@ def parse_options(core, options_data, base_path=None):
                 name, options = _load_file_options(core, include_path)
                 parsed_options.extend(options)
             continue
+        if key in _RESERVED_NAMES:
+            raise ValueError(
+                f"'{key}' is a reserved schema field name and cannot be used as "
+                "an option name")
         parsed_options.append(_parse_option(core, key, value, base_path))
     return parsed_options
 
@@ -173,6 +186,13 @@ def _parse_option(core, name, option_data, base_path=None):
             option_data = {'default': option_data}
 
     option_data = _normalize_fields(name, option_data)
+
+    if 'requires' in option_data:
+        # 'requires' must be a callable, which JSON cannot express; it may be
+        # supported in the schema later, but for now it is Python-API only.
+        raise ValueError(
+            f"Option '{name}': 'requires' is not supported in the JSON schema; "
+            "define it via the Python API instead")
 
     option_type_name = ''
     def_value = option_data.get('default', None)

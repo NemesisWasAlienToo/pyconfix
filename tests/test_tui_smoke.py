@@ -8,9 +8,10 @@ handling reaches core logic (toggle) and the serializer (save).
 import json
 
 import curses
+import curses.textpad
 import pytest
 
-from pyconfix import pyconfix
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType
 from pyconfix.tui import Tui
 
 
@@ -19,6 +20,20 @@ SCHEMA = {
         "FIRST_BOOL": True,
         "AN_INT": 5,
         "GRP": {"CHILD_A": True, "CHILD_B": False},
+    }
+}
+
+
+# A schema exercising every leaf type the TUI renders/edits.
+RICH_SCHEMA = {
+    "Rich": {
+        "B1": True,
+        "B2": False,
+        "NUM": {"type": "int", "default": 5},
+        "TXT": {"type": "string", "default": "hi"},
+        "LEVEL": {"type": "enum", "default": "A", "choices": ["A", "B", "C"]},
+        "EXT_INFO": {"type": "external", "default": "x"},
+        "GRP": {"CHILD": True},
     }
 }
 
@@ -49,6 +64,29 @@ class FakeStdscr:
     def attroff(self, *a): pass
 
 
+class FakeEditWin:
+    """Stand-in for the curses.newwin edit window used by _edit_option."""
+    def move(self, *a): pass
+    def clrtoeol(self, *a): pass
+    def addstr(self, *a): pass
+    def refresh(self, *a): pass
+
+
+class FakeTextbox:
+    """Stand-in for curses.textpad.Textbox: exercises the validate callback
+    (resize + newline) then returns a scripted string."""
+    result = "42"
+
+    def __init__(self, win, insert_mode=True):
+        pass
+
+    def edit(self, validate=None):
+        if validate is not None:
+            validate(curses.KEY_RESIZE)          # -> triggers a redraw branch
+            validate(curses.ascii.NL)            # -> newline handling
+        return type(self).result
+
+
 @pytest.fixture
 def stub_curses(monkeypatch):
     monkeypatch.setattr(curses, "curs_set", lambda *a: None, raising=False)
@@ -57,6 +95,16 @@ def stub_curses(monkeypatch):
     monkeypatch.setattr(curses, "init_pair", lambda *a: None, raising=False)
     monkeypatch.setattr(curses, "color_pair", lambda n: 0, raising=False)
     monkeypatch.setattr(curses, "keyname", lambda k: b"k", raising=False)
+    monkeypatch.setattr(curses, "LINES", 24, raising=False)
+    monkeypatch.setattr(curses, "newwin", lambda *a: FakeEditWin(), raising=False)
+    monkeypatch.setattr(curses, "endwin", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses, "initscr", lambda *a: FakeStdscr([]), raising=False)
+    monkeypatch.setattr(curses, "noecho", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses, "cbreak", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses, "echo", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses, "nocbreak", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses.textpad, "rectangle", lambda *a: None, raising=False)
+    monkeypatch.setattr(curses.textpad, "Textbox", FakeTextbox, raising=False)
 
 
 @pytest.fixture
@@ -66,6 +114,20 @@ def app(tmp_path, monkeypatch):
     cfg = pyconfix()
     cfg.load_schem(["smoke.json"])
     return cfg
+
+
+@pytest.fixture
+def rich(tmp_path, monkeypatch):
+    (tmp_path / "rich.json").write_text(json.dumps(RICH_SCHEMA))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix()
+    cfg.load_schem(["rich.json"])
+    return cfg
+
+
+def _rows_to(cfg, name):
+    """Number of KEY_DOWN presses to reach a top-level option from row 0."""
+    return [o.name for o in cfg.options].index(name)
 
 
 def test_menu_loop_quits_cleanly(app, stub_curses):
@@ -175,3 +237,123 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
     assert "DEP" not in [o.name for o, _ in hidden]
     shown = Tui(cfg,"out.json", show_disabled=True)._flatten_options(cfg.options)
     assert "DEP" in [o.name for o, _ in shown]
+
+
+# --------------------------------------------------------------------------- #
+# Driving the menu loop through each interaction (fake stdscr + stubbed curses)
+# --------------------------------------------------------------------------- #
+
+def test_menu_navigate_down_then_toggle_second_bool(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    tui._menu_loop(FakeStdscr([curses.KEY_DOWN, curses.KEY_ENTER, tui.quite_key]))
+    assert rich._get("B1").value is True      # untouched
+    assert rich._get("B2").value is True      # False -> True after toggle
+
+
+def test_menu_navigate_up_is_clamped_at_top(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    # KEY_UP at the top row is a no-op; ENTER still toggles the first option.
+    tui._menu_loop(FakeStdscr([curses.KEY_UP, curses.KEY_ENTER, tui.quite_key]))
+    assert rich._get("B1").value is False
+
+
+def test_menu_help_page_opens_and_returns(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    screen = FakeStdscr([tui.help_key, curses.KEY_DOWN, ord('q'), tui.quite_key])
+    tui._menu_loop(screen)
+    assert any("Help Page" in a for row in screen.drawn for a in row if isinstance(a, str))
+
+
+def test_menu_description_page_opens_and_returns(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    screen = FakeStdscr([tui.description_key, curses.KEY_DOWN, ord('q'), tui.quite_key])
+    tui._menu_loop(screen)                       # should not raise
+
+
+def test_menu_collapse_key_expands_group(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    grp = rich._get("GRP")
+    assert grp.expanded is False
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "GRP")
+    tui._menu_loop(FakeStdscr(downs + [tui.collapse_key, tui.quite_key]))
+    assert grp.expanded is True
+
+
+def test_menu_save_diff_writes_only_changes(rich, stub_curses, tmp_path):
+    out = str(tmp_path / "diff.json")
+    rich._get("B2").value = True                 # one change from defaults
+    tui = Tui(rich, out)
+    tui._menu_loop(FakeStdscr([tui.save_diff_key, ord(' '), tui.quite_key]))
+    written = json.loads((tmp_path / "diff.json").read_text())
+    assert written == rich.diff()
+    assert "B1" not in written and written.get("B2") is True
+
+
+def test_menu_edit_int_option(rich, stub_curses):
+    FakeTextbox.result = "42"
+    tui = Tui(rich, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
+    tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
+    assert rich._get("NUM").value == 42
+
+
+def test_menu_edit_int_option_rejects_invalid(rich, stub_curses):
+    FakeTextbox.result = "not-a-number"
+    tui = Tui(rich, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
+    tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
+    assert rich._get("NUM").value == 5           # kept the original on ValueError
+    FakeTextbox.result = "42"                     # restore for other tests
+
+
+def test_menu_edit_enum_selects_next_choice(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "LEVEL")
+    tui._menu_loop(FakeStdscr(
+        downs + [curses.KEY_ENTER, curses.KEY_DOWN, curses.KEY_ENTER, tui.quite_key]))
+    assert rich.LEVEL == "B"                      # A -> B
+
+
+def test_menu_edit_enum_abort_keeps_original(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "LEVEL")
+    tui._menu_loop(FakeStdscr(
+        downs + [curses.KEY_ENTER, curses.KEY_DOWN, tui.abort_key, tui.quite_key]))
+    assert rich.LEVEL == "A"                      # aborted -> original
+
+
+def test_menu_external_option_enter_is_noop(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(rich, "EXT_INFO")
+    tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))  # no raise
+
+
+def test_menu_action_enter_executes(tmp_path, monkeypatch, stub_curses):
+    (tmp_path / "rich.json").write_text(json.dumps({"A": {"FLAG": True}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix()
+    cfg.load_schem(["rich.json"])
+    ran = []
+    cfg.add_options(ConfigOption(name="build", option_type=ConfigOptionType.ACTION,
+                                 default=lambda x: ran.append(True)))
+    tui = Tui(cfg, "out.json")
+    downs = [curses.KEY_DOWN] * _rows_to(cfg, "build")
+    tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
+    assert ran == [True]
+
+
+def test_menu_search_type_then_abort(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    # enter search, type "B", backspace, type "B", abort (confirmed by -1), quit
+    screen = FakeStdscr([tui.search_key, ord('B'), curses.KEY_BACKSPACE,
+                         ord('B'), tui.abort_key, -1, tui.quite_key])
+    tui._menu_loop(screen)                        # should not raise
+
+
+def test_menu_search_enter_toggles_match(rich, stub_curses):
+    tui = Tui(rich, "out.json")
+    # search "B2" narrows to that bool; Enter toggles it, then abort + quit.
+    screen = FakeStdscr([tui.search_key, ord('B'), ord('2'),
+                         curses.KEY_ENTER, tui.abort_key, -1, tui.quite_key])
+    tui._menu_loop(screen)
+    assert rich._get("B2").value is True         # False -> True via search+enter

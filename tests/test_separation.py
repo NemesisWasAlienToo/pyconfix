@@ -377,7 +377,7 @@ def test_schema_enum_matches_direct_configoption_coercion():
 
 
 # --------------------------------------------------------------------------- #
-# short field aliases (deps/desc/req/opts/def)
+# short field aliases (deps/desc/opts/def)
 # --------------------------------------------------------------------------- #
 
 def test_field_alias_deps_maps_to_dependencies():
@@ -415,6 +415,37 @@ def test_field_alias_matches_canonical_result():
         Core(), {"N": {"type": "int", "default": 3, "description": "d", "dependencies": "true"}})[0]
     assert aliased.default == canonical.default
     assert aliased.description == canonical.description
+
+
+# --------------------------------------------------------------------------- #
+# reserved field names + requires is Python-API only in the JSON schema
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("reserved", [
+    "type", "default", "choices", "description", "data", "dependencies",
+    "options", "deps", "desc", "opts", "def",
+])
+def test_reserved_field_name_rejected_as_option_name(reserved):
+    with pytest.raises(ValueError):
+        serializer.parse_options(Core(), {reserved: True})
+
+
+def test_reserved_field_name_rejected_when_nested_in_group():
+    with pytest.raises(ValueError):
+        serializer.parse_options(
+            Core(), {"G": {"type": "group", "options": {"deps": True}}})
+
+
+def test_uppercase_reserved_word_is_allowed_as_option_name():
+    # Only the exact lowercase field keys are reserved; a distinct name is fine.
+    opts = serializer.parse_options(Core(), {"TYPE": True, "DATA": 5})
+    assert {o.name for o in opts} == {"TYPE", "DATA"}
+
+
+def test_requires_in_json_schema_raises_clear_error():
+    with pytest.raises(ValueError, match="Python API"):
+        serializer.parse_options(
+            Core(), {"ACT": {"type": "group", "options": {"X": True}, "requires": "A"}})
 
 
 # --------------------------------------------------------------------------- #

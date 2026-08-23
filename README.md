@@ -305,12 +305,20 @@ Any option may be written in long form with these keys:
 | `dependencies` | `deps` | all              | expression controlling availability (see below)   |
 | `data`         | —      | all              | arbitrary payload passed through to your save hook |
 | `options`      | `opts` | `group`          | nested options (or just nest them directly)        |
-| `requires`     | —      | `action`/`group` | predicate callable (Python API only)               |
+| `requires`     | —      | `action`/`group` | predicate callable — **Python API only** (see note) |
 
 The **Short** column lists an accepted alias for the wordier fields — write
 `"deps"` instead of `"dependencies"`, `"desc"`, `"def"`, or `"opts"`. Setting
-both a field and its alias on the same option is an error. Like the canonical
-keys, these short forms are reserved and can't be used as option names.
+both a field and its alias on the same option is an error.
+
+**Reserved keys.** All of the keys above (and their short aliases, plus
+`include`) are reserved: using one as an option **name** raises an error, since a
+name and a field share the same JSON object. Matching is exact and lowercase, so
+an option may still be named `TYPE` or `DATA` — just not `type` or `data`.
+
+**`requires` is Python-only for now.** It must be a callable, which JSON cannot
+express, so `requires` in a schema file raises a clear error; define it through
+the Python API instead. (Schema support may come in a future release.)
 
 ### Supported option types
 

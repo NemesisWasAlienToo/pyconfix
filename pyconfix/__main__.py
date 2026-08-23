@@ -81,7 +81,7 @@ def main():
         print("Incompatible flag combination: --print, --dump")
         exit(1)
 
-    output_file = "output_config.json"
+    output_file = "pyconfix_output_config.json"
 
     # 1. Build the config and load the schema explicitly.
     config = pyconfix()

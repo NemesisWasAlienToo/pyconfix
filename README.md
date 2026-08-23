@@ -77,7 +77,7 @@ Loading the schema and applying a saved config are explicit, chainable steps
 (each returns the instance), and only `run()` starts the interactive TUI.
 `load_schem()` defaults to `pyconfixfile.json`. A config file passed to
 `apply_config()` must exist (a missing one raises), so to reload a previous save
-check that it's there first — see `example.py`, which loads `output_config.json`
+check that it's there first — see `example.py`, which loads `pyconfix_output_config.json`
 only if it exists and lets the TUI's save create it on the first run.
 
 Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
@@ -129,6 +129,14 @@ print(cfg.get("HOST"))   # access a value programmatically
 print(cfg.HOST)          # the same
 ```
 
+Or done in one liner:
+
+```py
+from pyconfix import pyconfix
+
+pyconfix().load_schem().apply_config().run()
+```
+
 Method signatures for reference (`load_schem` and `apply_config` are chainable and
 return the instance):
 
@@ -139,7 +147,7 @@ load_schem(schem_files: list[str] = ["pyconfixfile.json"])
 # named config files must exist (missing -> ValueError); no files -> defaults kept
 apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
 
-run(output_file: str = "output_config.json",
+run(output_file: str = "pyconfix_output_config.json",
     show_disabled: bool = False,
     save_func: Callable[[dict], None] | None = None)
 ```

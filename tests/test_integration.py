@@ -80,7 +80,7 @@ def make_config(tmp_path, monkeypatch):
             def build(x):
                 return 42
 
-            @cfg.action_option(requires=lambda x: x.build() == 42)
+            @cfg.action_option(needs=lambda x: x.build() == 42)
             def deploy(x):
                 return x.build() + 1
 
@@ -259,7 +259,7 @@ def test_execute_action_returns_value_and_trace(cfg):
     assert cfg._execute_action(cfg._get("build")) == (42, ["build"])
 
 
-def test_action_with_requires_and_chained_dependency(cfg):
+def test_action_with_needs_and_chained_dependency(cfg):
     value, trace = cfg.deploy()
     assert value == 43
     assert trace[0] == "deploy"

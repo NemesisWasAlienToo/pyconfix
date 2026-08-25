@@ -97,16 +97,16 @@ def test_external_cannot_have_dependencies():
                      default="s", dependencies="A")
 
 
-def test_requires_only_on_action_or_group():
+def test_needs_only_on_action_or_group():
     with pytest.raises(ValueError):
         ConfigOption(name="B", option_type=ConfigOptionType.BOOL, default=True,
-                     requires=lambda x: True)
+                     needs=lambda x: True)
 
 
-def test_requires_must_be_callable():
+def test_needs_must_be_callable():
     with pytest.raises(ValueError):
         ConfigOption(name="A", option_type=ConfigOptionType.ACTION,
-                     default=lambda x: 1, requires="not-callable")
+                     default=lambda x: 1, needs="not-callable")
 
 
 # --------------------------------------------------------------------------- #

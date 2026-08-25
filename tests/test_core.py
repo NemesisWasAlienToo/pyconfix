@@ -16,7 +16,7 @@ def opt(name, type_, **kw):
     return ConfigOption(name=name, option_type=type_, **kw)
 
 
-def action(c, name=None, dependencies=None, requires=None):
+def action(c, name=None, dependencies=None, needs=None):
     """Register an ACTION option directly on a Core.
 
     The ``action_option`` decorator sugar now lives on the runner; Core still
@@ -29,7 +29,7 @@ def action(c, name=None, dependencies=None, requires=None):
             option_type=ConfigOptionType.ACTION,
             default=func,
             dependencies=dependencies,
-            requires=requires,
+            needs=needs,
             description=func.__doc__ or "",
         ))
         return func
@@ -361,11 +361,11 @@ def test_action_result_is_cached_within_one_execution():
     assert trace.count("leaf") == 2     # both references recorded in the trace
 
 
-def test_action_requires_gate_blocks_body():
+def test_action_needs_gate_blocks_body():
     c = Core()
     calls = []
 
-    @action(c, requires=lambda x: False)
+    @action(c, needs=lambda x: False)
     def gated(x):
         calls.append(1)
         return 1
@@ -451,10 +451,10 @@ def test_action_body_reads_unavailable_option_and_action():
     assert gated_ref() is None          # unavailable action -> lambda: None
 
 
-def test_action_requires_unknown_token_raises_clean_attributeerror():
+def test_action_needs_unknown_token_raises_clean_attributeerror():
     c = Core()
 
-    @action(c, requires=lambda x: x.NO_SUCH_OPTION)
+    @action(c, needs=lambda x: x.NO_SUCH_OPTION)
     def act(x):
         return 1
 

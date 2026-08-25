@@ -180,7 +180,7 @@ cfg.add_options(
         description='Builds the software',
         dependencies=lambda x: x.ENABLE_FEATURE_A,
         default=build,
-        requires=lambda x: x.LOG_LEVEL
+        needs=lambda x: x.LOG_LEVEL
     ),
     ConfigOption(
         name='deploy',
@@ -188,7 +188,7 @@ cfg.add_options(
         description='Deploys the software',
         dependencies=lambda x: x.ENABLE_FEATURE_A,
         default=deploy,
-        requires=lambda x: x.build()
+        needs=lambda x: x.build()
     ),
 )
 cfg.apply_config()
@@ -305,7 +305,7 @@ Any option may be written in long form with these keys:
 | `dependencies` | `deps` | all              | expression controlling availability (see below)   |
 | `data`         | —      | all              | arbitrary payload passed through to your save hook |
 | `options`      | `opts` | `group`          | nested options (or just nest them directly)        |
-| `requires`     | —      | `action`/`group` | predicate callable — **Python API only** (see note) |
+| `needs`        | —      | `action`/`group` | predicate callable — **Python API only** (see note) |
 
 The **Short** column lists an accepted alias for the wordier fields — write
 `"deps"` instead of `"dependencies"`, `"desc"`, `"def"`, or `"opts"`. Setting
@@ -316,8 +316,8 @@ both a field and its alias on the same option is an error.
 name and a field share the same JSON object. Matching is exact and lowercase, so
 an option may still be named `TYPE` or `DATA` — just not `type` or `data`.
 
-**`requires` is Python-only for now.** It must be a callable, which JSON cannot
-express, so `requires` in a schema file raises a clear error; define it through
+**`needs` is Python-only for now.** It must be a callable, which JSON cannot
+express, so `needs` in a schema file raises a clear error; define it through
 the Python API instead. (Schema support may come in a future release.)
 
 ### Supported option types

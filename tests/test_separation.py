@@ -418,7 +418,7 @@ def test_field_alias_matches_canonical_result():
 
 
 # --------------------------------------------------------------------------- #
-# reserved field names + requires is Python-API only in the JSON schema
+# reserved field names + needs is Python-API only in the JSON schema
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("reserved", [
@@ -442,10 +442,10 @@ def test_uppercase_reserved_word_is_allowed_as_option_name():
     assert {o.name for o in opts} == {"TYPE", "DATA"}
 
 
-def test_requires_in_json_schema_raises_clear_error():
+def test_needs_in_json_schema_raises_clear_error():
     with pytest.raises(ValueError, match="Python API"):
         serializer.parse_options(
-            Core(), {"ACT": {"type": "group", "options": {"X": True}, "requires": "A"}})
+            Core(), {"ACT": {"type": "group", "options": {"X": True}, "needs": "A"}})
 
 
 # --------------------------------------------------------------------------- #

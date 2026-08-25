@@ -20,7 +20,7 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 * Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!`, comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
 * Composable schemas – `"include"` at any level: split large configs, even factoring a single group's contents into its own file.
 * Instant search (`/`).
-* ⏹ Abort key – Ctrl+A exits search, input boxes etc.
+* Abort key – Ctrl+A exits search, input boxes etc.
 * Live validation – options auto‑hide when dependencies fail.
 * Pluggable save hook – write JSON, YAML, C headers, env‑files – whatever.
 * Action options – define executable tasks with dependencies that can be run interactively or via CLI.

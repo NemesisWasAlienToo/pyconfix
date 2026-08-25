@@ -72,6 +72,12 @@ class pyconfix:
             def get(self):
                 return self.group
 
+            def add_options(self, *options):
+                """Add options into this group through the manager's normal add
+                path, so their names are registered and indexed (never append to
+                ``get().options`` directly, which bypasses that)."""
+                return core.add_options(*options, parent=self.group)
+
             def action_option(self, name=None, dependencies=None, requires=None):
                 def decorator(func):
                     new_option = ConfigOption(

@@ -24,6 +24,58 @@ def test_type_accepts_string_alias():
     assert o.option_type == ConfigOptionType.INT
 
 
+# --------------------------------------------------------------------------- #
+# Type deduction from the value (option_type omitted); default is positional #2
+# --------------------------------------------------------------------------- #
+
+def test_default_is_second_positional_arg():
+    o = ConfigOption("HOST", "localhost")
+    assert o.name == "HOST" and o.default == "localhost"
+    assert o.option_type == ConfigOptionType.STRING
+
+
+def test_deduce_bool_int_string():
+    assert ConfigOption("B", True).option_type == ConfigOptionType.BOOL
+    assert ConfigOption("N", 5).option_type == ConfigOptionType.INT
+    assert ConfigOption("S", "hi").option_type == ConfigOptionType.STRING
+
+
+def test_deduce_bool_before_int():
+    # bool is a subclass of int, so False must still deduce BOOL (not INT)
+    assert ConfigOption("B", False).option_type == ConfigOptionType.BOOL
+
+
+def test_deduce_enum_from_choices():
+    o = ConfigOption("LEVEL", choices=["A", "B", "C"])
+    assert o.option_type == ConfigOptionType.ENUM
+    assert o.default == "A"                      # first choice
+    o2 = ConfigOption("LEVEL", "B", choices=["A", "B", "C"])
+    assert o2.default == "B"                     # positional default respected
+
+
+def test_deduce_action_from_callable():
+    o = ConfigOption("build", lambda x: 1)
+    assert o.option_type == ConfigOptionType.ACTION
+
+
+def test_deduce_group_from_options():
+    child = ConfigOption("C", False)
+    o = ConfigOption("G", options=[child])
+    assert o.option_type == ConfigOptionType.GROUP
+    assert o.options == [child]
+
+
+def test_explicit_type_overrides_deduction():
+    # an explicit option_type is honoured even if the value would deduce otherwise
+    o = ConfigOption(name="X", option_type=ConfigOptionType.EXTERNAL, default="static")
+    assert o.option_type == ConfigOptionType.EXTERNAL
+
+
+def test_cannot_deduce_type_raises():
+    with pytest.raises(ValueError):
+        ConfigOption("NOPE")                     # no type, no value to infer from
+
+
 def test_group_requires_list_options():
     ConfigOption(name="G", option_type=ConfigOptionType.GROUP, options=[])  # ok
     with pytest.raises(ValueError):

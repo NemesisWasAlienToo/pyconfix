@@ -8,10 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- Empty
+- `pyconfix.include(other, parent=None)` — the Python-side counterpart to the JSON `include` directive. Merges another config's options (nested children and actions included) into this one through the normal add path, so names stay globally unique. Pass a group as `parent` to nest the imported options under it. This lets options and actions be distributed across files and composed, while each module's config stays runnable standalone.
+- `python -m pyconfix` gained `--run ACTION` (`-r`) to execute an action headlessly, plus `--value` (`-v`) and `--trace` (`-t`) flags.
+- `ConfigOption` deduces its type from the value when `option_type` is omitted, mirroring the JSON short forms: bool/int/string from the default, `enum` from `choices`, `action` from a callable default, `group` from an `options` list. So a simple option is just a name and a value.
 
 ### Changed
-- Empty
+- `ConfigOption`'s second positional argument is now `default` (was `option_type`); `option_type` is now optional. Every shipped call site uses keyword arguments, so the library and examples are unaffected — but code that passed `option_type` positionally must switch to the keyword.
+- Running an action from the CLI is now quiet by default — neither the return value nor the execution trace prints. Pass `--value` (`-v`) and/or `--trace` (`-t`) to show them. Applies to both `example.py` and `python -m pyconfix`.
 
 ### Fixed
 - Empty

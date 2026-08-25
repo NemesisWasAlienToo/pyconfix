@@ -129,6 +129,25 @@ print(cfg.get("HOST"))   # access a value programmatically
 print(cfg.HOST)          # the same
 ```
 
+When building options in code, the type is deduced from the value if you omit
+`option_type` — `default` is the second positional argument, so a simple option
+is just a name and a value (mirroring the JSON short forms):
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+cfg = pyconfix()
+cfg.add_options(
+    ConfigOption("ENABLE", True),                 # -> bool
+    ConfigOption("PORT", 8080),                   # -> int
+    ConfigOption("HOST", "localhost"),            # -> string
+    ConfigOption("LEVEL", choices=["A", "B"]),    # -> enum (default = first choice)
+)
+```
+
+Deduction also covers `action` (a callable default) and `group` (an `options`
+list). Pass `option_type` explicitly for `external`, or to override.
+
 Or done in one liner:
 
 ```py
@@ -137,8 +156,8 @@ from pyconfix import pyconfix
 pyconfix().load_schem().apply_config().run()
 ```
 
-Method signatures for reference (`load_schem` and `apply_config` are chainable and
-return the instance):
+Method signatures for reference (`load_schem`, `apply_config` and `include` are
+chainable and return the instance):
 
 ```python
 pyconfix()
@@ -147,10 +166,48 @@ load_schem(schem_files: list[str] = ["pyconfixfile.json"])
 # named config files must exist (missing -> ValueError); no files -> defaults kept
 apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
 
+# merge another config's options into this one (Python-side 'include')
+include(other: pyconfix, parent: ConfigOption | None = None)
+
 run(output_file: str = "pyconfix_output_config.json",
     show_disabled: bool = False,
     save_func: Callable[[dict], None] | None = None)
 ```
+
+### Composing configs across files
+
+`include()` is the Python counterpart to the JSON `include` directive: it takes
+another `pyconfix` and adds all of its options — nested children and actions
+included — to the config that includes it. Names stay globally unique, so a
+collision raises. Pass a group as `parent` to nest the imported options under it.
+
+```python
+# modules/database.py — a self-contained, standalone-runnable config
+from pyconfix import pyconfix, ConfigOption
+
+database = pyconfix()
+database.add_options(ConfigOption("DB_HOST", "localhost"))   # type deduced from the value
+
+@database.action_option(dependencies=lambda x: x.DB_HOST)
+def migrate(x):
+    print(f"migrating {x.DB_HOST}")
+```
+
+```python
+# menu.py — the root pulls modules together however it likes
+from pyconfix import pyconfix
+from modules import database, web
+
+cfg = pyconfix()
+cfg.include(database.database)                          # merge at top level
+cfg.include(web.web, parent=cfg.group_option("web").get())  # nest under a group
+cfg.load_schem(["root.json"]).run()
+```
+
+Because an included module builds its own instance, it also runs on its own
+(`database.load_schem().run()`) — the same options are reusable standalone and
+composed. How you get hold of the other config (import a module, call a builder,
+read a variable) is entirely up to you.
 
 ## Actions
 
@@ -198,10 +255,11 @@ cfg.apply_config()
 
 * **Interactive mode**: Highlight an action in the TUI and press Enter. pyconfix will topologically sort and execute its dependencies, then the action itself, caching results.
 
-* **CLI mode**: Use the `--run` flag:
+* **CLI mode**: Use the `--run` flag. It runs the action quietly; add `--value` to print its return value and/or `--trace` to print the execution trace:
 
   ```bash
   python menu.py --cli --run build
+  python menu.py --cli --run build --value --trace
   ```
 
 * **Programmatically** (no `run()` needed — just load, apply, then call):

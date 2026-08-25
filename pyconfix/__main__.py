@@ -23,6 +23,21 @@ def parse_args():
         help="Prints the value of an option"
     )
     parser.add_argument(
+        "-r", "--run",
+        metavar="ACTION",
+        help="Runs an action"
+    )
+    parser.add_argument(
+        "-v", "--value",
+        action="store_true",
+        help="Print the action's return value (used with --run)"
+    )
+    parser.add_argument(
+        "-t", "--trace",
+        action="store_true",
+        help="Print the action execution trace (used with --run)"
+    )
+    parser.add_argument(
         "--cli",
         action="store_true",
         help="Run in CLI mode instead of graphical mode"
@@ -93,13 +108,19 @@ def main():
     config.apply_config(config_files=args.load or [], overlay=args.option)
 
     # 3. Either run the interactive TUI or answer the headless query.
-    if args.cli or args.print or args.dump:
+    if args.cli or args.print or args.dump or args.run:
+        if args.run:
+            value, trace = config.get(args.run)()
+            if args.value:
+                print(f"Value: {value}")
+            if args.trace:
+                print(f"Trace: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
         elif args.dump:
             print(config.dump())
-        else:
-            # Pure CLI mode: persist the applied configuration.
+        elif not args.run:
+            # Pure CLI mode (no query/run): persist the applied configuration.
             config.save(output_file)
     else:
         config.run(output_file=output_file, show_disabled=args.show_disabled)

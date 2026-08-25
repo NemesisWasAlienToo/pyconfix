@@ -1,5 +1,6 @@
 import time, argparse, sys, os
 from pyconfix import pyconfix, ConfigOption, ConfigOptionType
+from database_module import create_database_module
 import platform
 
 ### This function saves the current configurations in a defconfig-like format.
@@ -30,6 +31,8 @@ def create_config():
     config.add_options(
         config.option_from_alias('tri-state', name='NEW_MODULE_TRI_STATE_FROM_PYTHON'),
         config.option_from_alias('string', name='STRING_FROM_ALIAS', default='Default string value'),
+        ### The type is deduced from the value, so name + default is enough.
+        ConfigOption('MAX_THREADS', 4),
         ConfigOption(
             name='OS',
             option_type=ConfigOptionType.EXTERNAL,
@@ -82,7 +85,13 @@ def create_config():
         print("Testing...")
         time.sleep(2)
         return True
-    
+
+    ### Options and actions can be split across files/modules and pulled together
+    ### with include(). Here the database module (imported from database_module.py)
+    ### is nested under its own group.
+    database_group = config.group_option("database").get()
+    config.include(create_database_module(), parent=database_group)
+
     config.load_schem(schem_files=["schem.json"])
     return config
 
@@ -99,6 +108,16 @@ def parse_args():
         "-r", "--run",
         metavar="ACTION",
         help="Runs an action"
+    )
+    parser.add_argument(
+        "-v", "--value",
+        action="store_true",
+        help="Print the action's return value (used with --run)"
+    )
+    parser.add_argument(
+        "-t", "--trace",
+        action="store_true",
+        help="Print the action execution trace (used with --run)"
     )
     parser.add_argument(
         "-p", "--print",
@@ -177,8 +196,10 @@ def main():
         ### Options can also be retrieved using the get method.
         if args.run:
             value, trace = config.get(args.run)()
-            print(f"Value: {value}")
-            print(f"Trace: {trace}")
+            if args.value:
+                print(f"Value: {value}")
+            if args.trace:
+                print(f"Trace: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
 

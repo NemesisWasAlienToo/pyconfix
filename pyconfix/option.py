@@ -18,11 +18,32 @@ class ConfigOptionType(StrEnum):
     EXTERNAL = "external"
 
 class ConfigOption:
-    def __init__(self, name, option_type:ConfigOptionType, default=None, data=None, description="",
+    def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
                  dependencies=None, options=None, choices=None, expanded=False, needs=None):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
-        
+
+        # When no type is given, deduce it from the provided value — mirroring the
+        # JSON short forms (choices -> enum, then bool/int/string), plus the
+        # Python-only cases (callable -> action, options -> group).
+        if option_type is None:
+            if choices:
+                option_type = ConfigOptionType.ENUM
+            elif isinstance(default, bool):
+                option_type = ConfigOptionType.BOOL
+            elif isinstance(default, int):
+                option_type = ConfigOptionType.INT
+            elif isinstance(default, str):
+                option_type = ConfigOptionType.STRING
+            elif callable(default):
+                option_type = ConfigOptionType.ACTION
+            elif options is not None:
+                option_type = ConfigOptionType.GROUP
+            else:
+                raise ValueError(
+                    f"Option '{name}': cannot deduce a type; pass 'option_type' or "
+                    "a value to infer it from (default, choices or options)")
+
         # For custom types from python API, user can jsut create factory functions
         # no fancy custom type detection is needed
         try:

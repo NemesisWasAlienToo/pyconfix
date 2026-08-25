@@ -58,6 +58,23 @@ class pyconfix:
         self._core.apply_config(saved_config)
         return self
 
+    def include(self, other, parent=None):
+        """Merge another config's options into this one.
+
+        ``other`` is another ``pyconfix`` (or a bare ``Core``); every one of its
+        top-level options — and their nested children and actions — is added
+        through the normal add path, so names are registered/indexed and any
+        duplicate raises. Pass ``parent`` (a group option, e.g.
+        ``cfg.group_option("db").get()``) to nest the included options under it.
+
+        This is the Python-side counterpart to the JSON ``include`` directive:
+        how you obtain ``other`` (import a module and call a builder, read a
+        variable, ...) is left entirely to the caller.
+        """
+        source = other.core if hasattr(other, "core") else other
+        self._core.add_options(*source.options, parent=parent)
+        return self
+
     # ----------------------------------------------------------------------- #
     # Decorator API for registering actions and groups
     # ----------------------------------------------------------------------- #

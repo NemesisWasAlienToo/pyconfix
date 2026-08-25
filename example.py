@@ -55,15 +55,15 @@ def create_config():
     # First define a group
     deployment_group_proxy = config.group_option("deployment", dependencies=lambda x: x.ENABLE_FEATURE_A)
 
-    # The group ConfigOption can be accessed using the get() function and
-    # sub options can also be added to the group by directly appending them
-    deployment_group_proxy.get().options.extend([
+    # Sub options can be added to the group with its add_options() method, which
+    # registers their names the same way as every other add path.
+    deployment_group_proxy.add_options(
         ConfigOption(
             name='SUB_OPTION',
             option_type=ConfigOptionType.BOOL,
             default=False
         )
-    ])
+    )
 
     # Then use the group's action_option decorator to add actions easier
     @deployment_group_proxy.action_option(

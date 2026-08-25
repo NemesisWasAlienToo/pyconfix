@@ -44,7 +44,7 @@ def create_config():
 
     ### Actions can also be added using a decorator for ease
     @config.action_option(
-        requires=lambda x: x.LOG_LEVEL, 
+        needs=lambda x: x.LOG_LEVEL, 
         dependencies=lambda x: x.ENABLE_FEATURE_A,
     )
     def build(x):
@@ -67,7 +67,7 @@ def create_config():
 
     # Then use the group's action_option decorator to add actions easier
     @deployment_group_proxy.action_option(
-        requires=lambda x: x.build(),
+        needs=lambda x: x.build(),
         dependencies=lambda x: x.ENABLE_FEATURE_A
     )
     def deploy(x):
@@ -76,7 +76,7 @@ def create_config():
         return True
     
     @config.action_option(
-        requires=lambda x: x.deploy(),
+        needs=lambda x: x.deploy(),
     )
     def test(x):
         print("Testing...")

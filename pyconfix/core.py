@@ -158,7 +158,7 @@ class Core:
 
             def _execute_action(self, opt):
                 trace.append(opt.name)
-                if opt.requires and not opt.requires(self):
+                if opt.needs and not opt.needs(self):
                     return None
                 if opt.name in self.cache:
                     return self.cache[opt.name]

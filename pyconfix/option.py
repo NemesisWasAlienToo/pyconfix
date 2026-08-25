@@ -19,7 +19,7 @@ class ConfigOptionType(StrEnum):
 
 class ConfigOption:
     def __init__(self, name, option_type:ConfigOptionType, default=None, data=None, description="",
-                 dependencies=None, options=None, choices=None, expanded=False, requires=None):
+                 dependencies=None, options=None, choices=None, expanded=False, needs=None):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
         
@@ -41,12 +41,12 @@ class ConfigOption:
         if option_type == ConfigOptionType.ACTION and not callable(default):
             raise ValueError(f"Action option {name} must have a callable default value")
 
-        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and requires:
-            raise ValueError(f"The 'requires' parameter is only valid for action and group options, not {option_type} options")
+        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and needs:
+            raise ValueError(f"The 'needs' parameter is only valid for action and group options, not {option_type} options")
         
-        if requires:
-            if not callable(requires):
-                raise ValueError(f"Requires for option {name} must be a callable")
+        if needs:
+            if not callable(needs):
+                raise ValueError(f"The 'needs' for option {name} must be a callable")
 
         if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
             raise ValueError(f"Group option {name} must have a list of options")
@@ -70,7 +70,7 @@ class ConfigOption:
         self.options = options or []
         self.choices = choices or []
         self.expanded = expanded
-        self.requires = requires
+        self.needs = needs
 
         if dependencies and not callable(dependencies):
             self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
@@ -85,7 +85,7 @@ class ConfigOption:
             'dependencies': self.dependencies,
             'options': [opt.to_dict() for opt in self.options],
             'choices': self.choices,
-            'requires': self.requires,
+            'needs': self.needs,
         }
     
     def clone_with(self, **kwargs):
@@ -103,7 +103,7 @@ class ConfigOption:
             'options': self.options,
             'choices': self.choices,
             'expanded': self.expanded,
-            'requires': self.requires,
+            'needs': self.needs,
         }
         params.update(kwargs)
         return ConfigOption(**params)

@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.1.0]
+### Changed
+- Renamed the action/group gate from `requires` to `needs` — the Python parameter (`ConfigOption(..., needs=...)`, `@config.action_option(needs=...)`) and the schema-reserved key. Behaviour is unchanged (a callable evaluated before the action runs); the JSON "not supported in the schema" error now names `needs`.
+
+---
+
 ## [1.0.0]
 First stable release. The public Python API and the JSON schema syntax are now considered stable.
 

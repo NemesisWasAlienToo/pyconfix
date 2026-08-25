@@ -78,14 +78,14 @@ class pyconfix:
                 ``get().options`` directly, which bypasses that)."""
                 return core.add_options(*options, parent=self.group)
 
-            def action_option(self, name=None, dependencies=None, requires=None):
+            def action_option(self, name=None, dependencies=None, needs=None):
                 def decorator(func):
                     new_option = ConfigOption(
                         name=name or func.__name__,
                         option_type=ConfigOptionType.ACTION,
                         default=func,
                         dependencies=dependencies,
-                        requires=requires,
+                        needs=needs,
                         description=func.__doc__ or ""
                     )
                     # Same add path as everything else: it enforces the global
@@ -96,15 +96,15 @@ class pyconfix:
                 return decorator
         return GroupProxy(group)
 
-    def action_option(self, name=None, dependencies=None, requires=None):
+    def action_option(self, name=None, dependencies=None, needs=None):
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
         :param dependencies: Optional dependency expression or function.
-        :param requires: Optional requires function.
+        :param needs: Optional needs function.
         :return: Decorator that registers the action.
         """
-        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
+        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, needs=needs)
 
     def group_option(self, name, dependencies=None):
         """

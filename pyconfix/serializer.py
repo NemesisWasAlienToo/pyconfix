@@ -130,7 +130,7 @@ _FIELD_ALIASES = {
 # used as option names, since a name and a field share the same dict namespace.
 _RESERVED_NAMES = (
     {"type", "default", "choices", "description", "data",
-     "dependencies", "requires", "options", "include"}
+     "dependencies", "needs", "options", "include"}
     | set(_FIELD_ALIASES)
 )
 
@@ -187,11 +187,11 @@ def _parse_option(core, name, option_data, base_path=None):
 
     option_data = _normalize_fields(name, option_data)
 
-    if 'requires' in option_data:
-        # 'requires' must be a callable, which JSON cannot express; it may be
+    if 'needs' in option_data:
+        # 'needs' must be a callable, which JSON cannot express; it may be
         # supported in the schema later, but for now it is Python-API only.
         raise ValueError(
-            f"Option '{name}': 'requires' is not supported in the JSON schema; "
+            f"Option '{name}': 'needs' is not supported in the JSON schema; "
             "define it via the Python API instead")
 
     option_type_name = ''
@@ -220,7 +220,7 @@ def _parse_option(core, name, option_data, base_path=None):
         description=option_data.get('description'),
         data=option_data.get('data'),
         dependencies=option_data.get('dependencies', ""),
-        requires=option_data.get('requires', ""),
+        needs=option_data.get('needs', ""),
         choices=option_data.get('choices', []),
         options=[]
     )
@@ -298,7 +298,7 @@ def _compile_dependencies(core, option):
 
 
 def finalize_dependencies(core):
-    """Cascade group dependencies/requires down to child options.
+    """Cascade group dependencies/needs down to child options.
 
     Called once after all schema files have been loaded.
     """
@@ -312,15 +312,15 @@ def finalize_dependencies(core):
             raise ValueError("Combining non-callable")
         return lambda x: a(x) and b(x)
 
-    def cascade_group(options, group_dependencies=None, group_requires=None):
+    def cascade_group(options, group_dependencies=None, group_needs=None):
         for opt in options:
             if group_dependencies:
                 opt.dependencies = combine(group_dependencies, opt.dependencies)
-            if group_requires:
+            if group_needs:
                 if opt.option_type in [ConfigOptionType.GROUP, ConfigOptionType.ACTION]:
-                    opt.requires = combine(group_requires, opt.requires)
+                    opt.needs = combine(group_needs, opt.needs)
             if opt.option_type == ConfigOptionType.GROUP:
-                cascade_group(opt.options, opt.dependencies, opt.requires)
+                cascade_group(opt.options, opt.dependencies, opt.needs)
 
     cascade_group(core.options)
 

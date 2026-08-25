@@ -316,6 +316,68 @@ def test_decorator_name_collides_with_add_options():
 
 
 # --------------------------------------------------------------------------- #
+# runner.include: merge another config's options (Python-side 'include')
+# --------------------------------------------------------------------------- #
+
+def _sub_config():
+    sub = pyconfix()
+    sub.add_options(ConfigOption(name="DB_HOST", option_type=ConfigOptionType.STRING,
+                                 default="localhost"))
+
+    @sub.action_option(dependencies=lambda x: x.DB_HOST)
+    def migrate(x):
+        return f"migrating {x.DB_HOST}"
+
+    return sub
+
+
+def test_include_merges_options_at_top_level():
+    root = pyconfix()
+    root.add_options(ConfigOption(name="APP", option_type=ConfigOptionType.STRING, default="svc"))
+    root.include(_sub_config())
+    assert root._get("DB_HOST") is not None
+    assert "DB_HOST" in [o.name for o in root.core.options]     # top-level
+
+
+def test_include_action_resolves_against_including_config():
+    # An action authored in the sub-config runs against the including config's
+    # session, so its `x.DB_HOST` resolves through the merged tree.
+    root = pyconfix()
+    root.include(_sub_config())
+    value, _ = root.migrate()
+    assert value == "migrating localhost"
+
+
+def test_include_under_parent_group_nests_and_indexes():
+    root = pyconfix()
+    group = root.group_option("database").get()
+    root.include(_sub_config(), parent=group)
+    assert any(o.name == "DB_HOST" for o in root._get("database").options)
+    assert "DB_HOST" not in [o.name for o in root.core.options]  # not top-level
+    assert root._get("DB_HOST") is not None                      # still indexed
+
+
+def test_include_duplicate_name_raises():
+    root = pyconfix()
+    root.add_options(ConfigOption(name="DB_HOST", option_type=ConfigOptionType.STRING, default="x"))
+    with pytest.raises(ValueError):
+        root.include(_sub_config())
+
+
+def test_include_is_chainable():
+    root = pyconfix()
+    assert root.include(_sub_config()) is root
+
+
+def test_include_accepts_bare_core():
+    root = pyconfix()
+    core = Core()
+    core.add_options(ConfigOption(name="RAW", option_type=ConfigOptionType.BOOL, default=True))
+    root.include(core)
+    assert root._get("RAW") is not None
+
+
+# --------------------------------------------------------------------------- #
 # serializer: 'include' resolution (top-level and nested inside a group)
 # --------------------------------------------------------------------------- #
 

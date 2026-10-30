@@ -55,12 +55,13 @@ class Core:
         )
         return self._register_alias(alias_option)
 
-    def option_from_alias(self, alias_name, **kwargs):
+    def option_from_alias(self, alias_name, name=None, **kwargs):
         """
         Create a ConfigOption from a registered alias without mutating config.options.
         """
-        if 'name' not in kwargs:
+        if name is None:
             raise ValueError("You must provide a 'name' parameter when creating an option from an alias")
+        kwargs['name'] = name
         custom_type = self.aliases.get(alias_name)
         if custom_type is None:
             try:
@@ -128,12 +129,12 @@ class Core:
                     option.value = value
 
     def _is_option_available(self, option):
-        def _is_option_available_impl(option, root):
-            if not option.dependencies:
+        def _is_option_available_impl(opt):
+            if not opt.dependencies:
                 return True
-            if not callable(option.dependencies): raise ValueError('Not callable dependencies')
-            return option.dependencies(self)
-        return _is_option_available_impl(option, option.name)
+            if not callable(opt.dependencies): raise ValueError('Not callable dependencies')
+            return opt.dependencies(self)
+        return _is_option_available_impl(option)
 
     def _sync_option_value(self, option, available):
         """Keep an option's value in sync with its availability.
@@ -223,8 +224,6 @@ class Core:
         return opt.value
 
     def _get(self, key):
-        # O(1) lookup via the name index, which holds every option (top-level
-        # and nested group children) registered on this manager.
         return self.option_map.get(key.upper())
 
     # ----------------------------------------------------------------------- #

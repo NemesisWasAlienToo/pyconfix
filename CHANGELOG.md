@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 - `ConfigOption`'s second positional argument is now `default` (was `option_type`); `option_type` is now optional. Every shipped call site uses keyword arguments, so the library and examples are unaffected — but code that passed `option_type` positionally must switch to the keyword.
 - Running an action from the CLI is now quiet by default — neither the return value nor the execution trace prints. Pass `--value` (`-v`) and/or `--trace` (`-t`) to show them. Applies to both `example.py` and `python -m pyconfix`.
+- Cleaned up the syntax for alias some more. Now the name is the second argument.
 
 ### Fixed
 - Empty

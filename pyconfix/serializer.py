@@ -251,18 +251,15 @@ def _parse_option(core, name, option_data, base_path=None):
     return option
 
 
-def _enum_choice_exists(options, key):
+def _enum_choice_exists(core, key):
     """True if ``key`` names a choice of some ENUM option — used when an enum
     choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
     key_upper = key.upper()
-    for opt in options:
-        if opt.option_type == ConfigOptionType.GROUP:
-            if _enum_choice_exists(opt.options, key):
-                return True
-        elif opt.option_type == ConfigOptionType.ENUM:
-            if any(choice.upper() == key_upper for choice in opt.choices):
-                return True
-    return False
+    return any(
+        opt.option_type == ConfigOptionType.ENUM
+        and any(choice.upper() == key_upper for choice in opt.choices)
+        for opt in core.option_map.values()
+    )
 
 
 def _compile_dependencies(core, option):
@@ -282,16 +279,19 @@ def _compile_dependencies(core, option):
 
     def getter(key):
         if key.upper() == root_upper:
-            raise ValueError(f"Cycle detected in the dependency of {option.name}: '{option.name}'")
+            raise ValueError(f"Cycle detected in the dependency of {option.name}")
         opt = core._get(key)
-        if opt is not None:
-            if opt.option_type == ConfigOptionType.ENUM:
-                return opt.choices[opt.value] if opt.value is not None else opt.default
-            return opt.value if opt.value is not None else opt.default
-        # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
-        if _enum_choice_exists(core.options, key):
-            return key
-        raise ValueError(f"Invalid token: {key}")
+        if opt is None:
+            if _enum_choice_exists(core, key):
+                return key
+            raise ValueError(f"Invalid token: {key}")
+        if not core._is_option_available(opt):
+            if opt.option_type == ConfigOptionType.ACTION:
+                return lambda : (None, [])
+            return None
+        if opt.option_type == ConfigOptionType.ENUM:
+            return opt.choices[opt.value] if opt.value is not None else opt.default
+        return opt.value if opt.value is not None else opt.default
 
     parser = BooleanExpressionParser(getter=getter)
     return lambda x: parser.evaluate_postfix(option.postfix_dependencies)

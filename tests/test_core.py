@@ -498,8 +498,7 @@ def test_action_option_callable_dependency_disables_action():
 
 def test_python_api_string_dependency_is_rejected():
     # String dependency expressions are for the JSON schema; through the Python
-    # API a callable must be used, so a raw string is rejected when evaluated.
+    # API a callable must be used, so a raw string is rejected when added.
     c = Core()
-    c.add_options(opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
     with pytest.raises(ValueError):
-        c._is_option_available(c._get("N"))
+        c.add_options(opt("N", ConfigOptionType.INT, default=1, dependencies="F"))

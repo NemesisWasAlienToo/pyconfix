@@ -48,7 +48,7 @@ def create_config():
     ### Actions can also be added using a decorator for ease
     @config.action_option(
         needs=lambda x: x.LOG_LEVEL, 
-        dependencies=lambda x: x.ENABLE_FEATURE_A,
+        dependencies=lambda x: x.ENABLE_FEATURE_A and x.NEW_MODULE_TRI_STATE_FROM_PYTHON == x.DISABLED,
     )
     def build(x):
         print("Building...")

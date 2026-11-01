@@ -128,18 +128,8 @@ class ConfigOption:
 
         self.postfix_dependencies = shunting_yard(tokenize(dependencies))
 
-        def getter(x, key):
-            if x.get_option(key) is None:
-                # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
-                if _enum_choice_exists(x.config, key):
-                    return key
-                raise ValueError(f"Invalid token: {key}")
-            # Resolve through the evaluation session `x`, so values match attribute
-            # access and the chain of options being evaluated carries over (cycles).
-            return getattr(x, key)
-
         return lambda x: BooleanExpressionParser().evaluate_postfix(
-            self.postfix_dependencies, getter=lambda key: getter(x, key))
+            self.postfix_dependencies, getter=lambda key: getattr(x, key))
 
     @property
     def value(self):

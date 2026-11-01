@@ -19,6 +19,15 @@ terminal (that is :mod:`tui`) and nothing about orchestration (that is
 
 from .option import *
 
+def _enum_choice_exists(config, key):
+    """True if ``key`` names a choice of some ENUM option — used when an enum
+    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
+    key_upper = key.upper()
+    return any(
+        opt.option_type == ConfigOptionType.ENUM
+        and any(choice.upper() == key_upper for choice in opt.choices)
+        for opt in config.option_map.values()
+    )
 
 class EvaluationSession:
     """Evaluates dependencies and actions for one top-level call.
@@ -75,6 +84,8 @@ class EvaluationSession:
     def __getattr__(self, name):
         opt = self.config.get_option(name)
         if opt is None:
+            if _enum_choice_exists(self.config, name):
+                return name
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
             if opt.option_type == ConfigOptionType.ACTION:
@@ -235,6 +246,8 @@ class Core:
     def __getattr__(self, name):
         opt = self.get_option(name)
         if opt is None:
+            if _enum_choice_exists(self, name):
+                return name
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
             if opt.option_type == ConfigOptionType.ACTION:

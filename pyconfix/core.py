@@ -299,9 +299,15 @@ class Core:
                 diff[key] = value
         return diff
 
-    def get(self, key, default=None):
+    def get_option(self, name):
         """
         Get an option by its name.
+        """
+        return self.option_map.get(name.upper())
+
+    def get(self, key, default=None):
+        """
+        Get an option's value by its name.
 
         Unknown keys should behave like a safe lookup and return the provided
         fallback value instead of raising an AttributeError.

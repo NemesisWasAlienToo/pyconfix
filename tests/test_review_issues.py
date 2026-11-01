@@ -516,3 +516,43 @@ def test_dependency_reading_a_running_action_is_not_a_cycle():
         return 5
 
     assert cfg.outer()[0] == 5
+
+
+# --------------------------------------------------------------------------- #
+# 9. A disabled option evaluates to None. Comparing it or doing arithmetic on it
+#    must give None (false), not a TypeError that crashes the TUI. Logical
+#    operators, == and != already work on None and keep their meaning.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "+", "-", "*", "/", "**", "%", "&", "|", "^", ">>", "<<"])
+def test_binary_operator_with_none_operand_is_none(op):
+    assert ev(f"X {op} 2", X=None) is None
+    assert ev(f"2 {op} X", X=None) is None
+
+
+def test_unary_minus_of_none_is_none():
+    assert ev("-X", X=None) is None
+
+
+@pytest.mark.parametrize("expr, expected", [
+    ("X == 2", False),
+    ("X != 2", True),
+    ("X && 1", False),
+    ("X || 1", True),
+    ("!X", True),
+    ("X ** 2 < 10", None),
+    ("(X > 2) || 1", True),
+])
+def test_none_keeps_logical_and_equality_meaning(expr, expected):
+    assert ev(expr, X=None) == expected
+
+
+def test_option_depending_on_math_over_disabled_option_is_disabled(tmp_path, monkeypatch):
+    name = write_schema(tmp_path, monkeypatch, {"S": {
+        "MASTER": False,
+        "COUNT": {"default": 10, "deps": "MASTER"},
+        "SMALL": {"default": True, "deps": "COUNT ** 2 < 10"},
+    }})
+    cfg = pyconfix().load_schem([name])
+    assert cfg.SMALL is None
+    assert cfg.dump()["SMALL"] is None

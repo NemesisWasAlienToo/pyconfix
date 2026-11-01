@@ -118,7 +118,7 @@ class pyconfix:
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
-        :param dependencies: Optional dependency expression or function.
+        :param dependencies: Optional dependency function.
         :param needs: Optional needs function.
         :param do_not_cache: Run the action every time instead of once per session.
         :return: Decorator that registers the action.

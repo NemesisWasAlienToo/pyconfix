@@ -156,7 +156,10 @@ class BooleanExpressionParser:
         if op == '!':
             return not bool(right)
         elif op == 'u-':
-            return -right
+            return -right if right is not None else None
+        elif op not in ('&&', '||', '==', '!=') and (left is None or right is None):
+            # A disabled option is None: anything computed from it is None too.
+            return None
         elif op == '&&':
             return bool(left) and bool(right)
         elif op == '||':

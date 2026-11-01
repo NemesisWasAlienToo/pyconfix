@@ -81,7 +81,7 @@ def parse_args():
     for key, value in options_dict.items():
         if value.lower() in ["true", "false"]:
             options_dict[key] = value.lower() == "true"
-        elif value.isdigit():
+        elif value.removeprefix('-').isdigit():
             options_dict[key] = int(value)
         else:
             options_dict[key] = value

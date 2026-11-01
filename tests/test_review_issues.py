@@ -308,7 +308,7 @@ def test_alias_typed_option_keeps_schema_data(tmp_path, monkeypatch):
     cfg = pyconfix()
     cfg.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "MODULE", "OFF"])
     cfg.load_schem([name])
-    assert cfg._get("TRI").data == ["WIN32"]
+    assert cfg.get_option("TRI").data == ["WIN32"]
 
 
 # --------------------------------------------------------------------------- #
@@ -372,7 +372,7 @@ def test_add_options_rejects_string_dependency_in_group_child():
     with pytest.raises(ValueError):
         core.add_options(ConfigOption(
             "G", option_type=ConfigOptionType.GROUP, options=[child]))
-    assert core._get("G") is None
+    assert core.get_option("G") is None
 
 
 def test_action_option_rejects_string_dependency():
@@ -410,8 +410,8 @@ def test_do_not_cache_from_schema(tmp_path, monkeypatch):
         "OFF": True,
     }})
     cfg = pyconfix().load_schem([name])
-    assert cfg._get("ON").do_not_cache is True
-    assert cfg._get("OFF").do_not_cache is False
+    assert cfg.get_option("ON").do_not_cache is True
+    assert cfg.get_option("OFF").do_not_cache is False
 
 
 def test_do_not_cache_is_reserved_in_schema(tmp_path, monkeypatch):
@@ -426,7 +426,7 @@ def test_do_not_cache_on_alias_typed_option(tmp_path, monkeypatch):
     cfg = pyconfix()
     cfg.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "OFF"])
     cfg.load_schem([name])
-    assert cfg._get("TRI").do_not_cache is True
+    assert cfg.get_option("TRI").do_not_cache is True
 
 
 @pytest.mark.parametrize("do_not_cache,expected", [(False, 1), (True, 2)])
@@ -471,7 +471,7 @@ def test_group_action_option_accepts_do_not_cache():
     def act(x):
         return 1
 
-    assert cfg._get("act").do_not_cache is True
+    assert cfg.get_option("act").do_not_cache is True
 
 
 def test_do_not_cache_still_detects_cycles():

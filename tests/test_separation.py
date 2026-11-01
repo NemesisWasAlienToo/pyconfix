@@ -113,9 +113,9 @@ def test_serializer_parses_options_into_core_via_add_options():
     core = Core()
     _load_dict(core, {"A": True, "N": {"type": "int", "default": 5},
                       "E": {"choices": ["x", "y"]}})
-    assert core._get("A").option_type == ConfigOptionType.BOOL
-    assert core._get("N").value == 5
-    assert core._get("E").option_type == ConfigOptionType.ENUM
+    assert core.get_option("A").option_type == ConfigOptionType.BOOL
+    assert core.get_option("N").value == 5
+    assert core.get_option("E").option_type == ConfigOptionType.ENUM
 
 
 def test_core_apply_config_takes_a_dict():
@@ -135,7 +135,7 @@ def test_serializer_finalize_cascades_group_dependency():
         "G": {"type": "group", "dependencies": "A_BOOL", "options": {"CHILD": False}},
     })
     core.apply_config({"A_BOOL": False})
-    assert core._is_option_available(core._get("CHILD")) is False
+    assert core._is_option_available(core.get_option("CHILD")) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -147,7 +147,7 @@ def test_runner_forwards_option_access_to_core():
     assert isinstance(cfg.core, Core)
     # option methods/attrs resolve through to the core
     cfg.add_options(ConfigOption(name="X", option_type=ConfigOptionType.BOOL, default=True))
-    assert cfg._get("X") is not None
+    assert cfg.get_option("X") is not None
     assert cfg.options is cfg.core.options
 
 
@@ -157,7 +157,7 @@ def test_runner_load_and_apply_headless(written_schema):
     cfg.apply_config(config_files=[], overlay={"AN_INT": 42})
     assert cfg.config_name == "Sep"
     assert cfg.AN_INT == 42
-    assert cfg._is_option_available(cfg._get("GATED")) is True
+    assert cfg._is_option_available(cfg.get_option("GATED")) is True
 
 
 def test_runner_apply_config_overlay_beats_file(written_schema):
@@ -244,8 +244,8 @@ def test_runner_action_option_registers_on_core():
     def build(x):
         return "built"
 
-    assert cfg._get("build").option_type == ConfigOptionType.ACTION
-    assert cfg.core._get("build") is not None      # lives on the underlying core
+    assert cfg.get_option("build").option_type == ConfigOptionType.ACTION
+    assert cfg.core.get_option("build") is not None      # lives on the underlying core
     assert cfg.build() == ("built", ["build"])
 
 
@@ -259,7 +259,7 @@ def test_runner_group_option_and_grouped_action():
     def ship(x):
         return "shipped"
 
-    assert cfg._get("ship").option_type == ConfigOptionType.ACTION
+    assert cfg.get_option("ship").option_type == ConfigOptionType.ACTION
     # the action was registered inside the group, not at top level
     assert any(o.name == "ship" for o in proxy.get().options)
 
@@ -335,7 +335,7 @@ def test_include_merges_options_at_top_level():
     root = pyconfix()
     root.add_options(ConfigOption(name="APP", option_type=ConfigOptionType.STRING, default="svc"))
     root.include(_sub_config())
-    assert root._get("DB_HOST") is not None
+    assert root.get_option("DB_HOST") is not None
     assert "DB_HOST" in [o.name for o in root.core.options]     # top-level
 
 
@@ -352,9 +352,9 @@ def test_include_under_parent_group_nests_and_indexes():
     root = pyconfix()
     group = root.group_option("database").get()
     root.include(_sub_config(), parent=group)
-    assert any(o.name == "DB_HOST" for o in root._get("database").options)
+    assert any(o.name == "DB_HOST" for o in root.get_option("database").options)
     assert "DB_HOST" not in [o.name for o in root.core.options]  # not top-level
-    assert root._get("DB_HOST") is not None                      # still indexed
+    assert root.get_option("DB_HOST") is not None                      # still indexed
 
 
 def test_include_duplicate_name_raises():
@@ -374,7 +374,7 @@ def test_include_accepts_bare_core():
     core = Core()
     core.add_options(ConfigOption(name="RAW", option_type=ConfigOptionType.BOOL, default=True))
     root.include(core)
-    assert root._get("RAW") is not None
+    assert root.get_option("RAW") is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -393,9 +393,9 @@ def test_nested_group_include_is_loaded(tmp_path, monkeypatch):
     cfg = pyconfix()
     cfg.load_schem(["main.json"])
 
-    assert cfg._get("CHILD") is not None
-    assert cfg._get("NESTED_INCLUDED") is not None
-    assert cfg._get("NESTED_INCLUDED").option_type == ConfigOptionType.BOOL
+    assert cfg.get_option("CHILD") is not None
+    assert cfg.get_option("NESTED_INCLUDED") is not None
+    assert cfg.get_option("NESTED_INCLUDED").option_type == ConfigOptionType.BOOL
 
 
 def test_top_level_include_is_loaded(tmp_path, monkeypatch):
@@ -408,7 +408,7 @@ def test_top_level_include_is_loaded(tmp_path, monkeypatch):
 
     cfg = pyconfix()
     cfg.load_schem(["main.json"])
-    assert cfg._get("Y") is not None
+    assert cfg.get_option("Y") is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -445,10 +445,10 @@ def test_schema_enum_matches_direct_configoption_coercion():
 def test_field_alias_deps_maps_to_dependencies():
     core = Core()
     _load_dict(core, {"A": True, "N": {"type": "int", "default": 5, "deps": "A"}})
-    n = core._get("N")
+    n = core.get_option("N")
     assert callable(n.dependencies)                 # compiled from the expression
     assert core._is_option_available(n) is True     # A is True
-    core._get("A").value = False
+    core.get_option("A").value = False
     assert core._is_option_available(n) is False
 
 

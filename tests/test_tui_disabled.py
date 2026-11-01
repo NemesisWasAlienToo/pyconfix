@@ -110,7 +110,7 @@ def test_dependent_of_disabled_option_shows_disabled(cfg):
 
 
 def test_option_disabled_at_startup_shows_disabled_on_first_frame(cfg):
-    cfg._get("FEATURE").value = False
+    cfg.get_option("FEATURE").value = False
     _, screen = play(cfg, [])
     assert row_text(screen, "NUM") == "NUM: [disabled]"
 
@@ -134,7 +134,7 @@ def test_unrelated_option_is_not_marked(cfg):
 
 
 def test_disabled_option_is_hidden_by_default(cfg):
-    cfg._get("FEATURE").value = False
+    cfg.get_option("FEATURE").value = False
     _, screen = play(cfg, [], show_disabled=False)
     with pytest.raises(AssertionError):
         row_text(screen, "NUM")
@@ -297,7 +297,7 @@ def test_moving_over_disabled_options_does_not_re_evaluate(cfg):
     calls = []
     cfg.add_options(ConfigOption(name="COUNTED", default=True,
                                  dependencies=lambda x: calls.append(1) or x.FEATURE))
-    cfg._get("FEATURE").value = False
+    cfg.get_option("FEATURE").value = False
     tui = Tui(cfg, "out.json", show_disabled=True)
     tui._flatten_options(cfg.options)
     tui._flatten_options(cfg.options)

@@ -140,10 +140,10 @@ def test_menu_loop_quits_cleanly(app, stub_curses):
 
 
 def test_menu_loop_toggles_first_bool(app, stub_curses):
-    assert app._get("FIRST_BOOL").value is True
+    assert app.get_option("FIRST_BOOL").value is True
     tui = Tui(app,"out.json")
     tui._menu_loop(FakeStdscr([curses.KEY_ENTER, tui.quite_key]))
-    assert app._get("FIRST_BOOL").value is False
+    assert app.get_option("FIRST_BOOL").value is False
 
 
 def test_menu_loop_save_writes_config(app, stub_curses, tmp_path):
@@ -205,7 +205,7 @@ def test_search_options_matches_group_children(app):
 
 def test_collapse_toggles_group_expanded(app):
     tui = Tui(app,"out.json")
-    grp = app._get("GRP")
+    grp = app.get_option("GRP")
     before = grp.expanded
     flat = tui._flatten_options(app.options)   # flatten lives on the TUI now
     idx = next(i for i, (o, _) in enumerate(flat) if o is grp)
@@ -218,7 +218,7 @@ def test_collapse_toggles_group_expanded(app):
 # --------------------------------------------------------------------------- #
 
 def test_flatten_includes_expanded_group_children_with_depth(app):
-    grp = app._get("GRP")
+    grp = app.get_option("GRP")
     grp.expanded = True
     flat = Tui(app,"out.json")._flatten_options(app.options)
     depths = {o.name: d for o, d in flat}
@@ -233,7 +233,7 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
     cfg.load_schem(["s.json"])
-    cfg._get("FLAG").value = False        # disables DEP (depends on FLAG)
+    cfg.get_option("FLAG").value = False        # disables DEP (depends on FLAG)
 
     hidden = Tui(cfg,"out.json")._flatten_options(cfg.options)
     assert "DEP" not in [o.name for o, _ in hidden]
@@ -248,15 +248,15 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
 def test_menu_navigate_down_then_toggle_second_bool(rich, stub_curses):
     tui = Tui(rich, "out.json")
     tui._menu_loop(FakeStdscr([curses.KEY_DOWN, curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("B1").value is True      # untouched
-    assert rich._get("B2").value is True      # False -> True after toggle
+    assert rich.get_option("B1").value is True      # untouched
+    assert rich.get_option("B2").value is True      # False -> True after toggle
 
 
 def test_menu_navigate_up_is_clamped_at_top(rich, stub_curses):
     tui = Tui(rich, "out.json")
     # KEY_UP at the top row is a no-op; ENTER still toggles the first option.
     tui._menu_loop(FakeStdscr([curses.KEY_UP, curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("B1").value is False
+    assert rich.get_option("B1").value is False
 
 
 def test_menu_help_page_opens_and_returns(rich, stub_curses):
@@ -274,7 +274,7 @@ def test_menu_description_page_opens_and_returns(rich, stub_curses):
 
 def test_menu_collapse_key_expands_group(rich, stub_curses):
     tui = Tui(rich, "out.json")
-    grp = rich._get("GRP")
+    grp = rich.get_option("GRP")
     assert grp.expanded is False
     downs = [curses.KEY_DOWN] * _rows_to(rich, "GRP")
     tui._menu_loop(FakeStdscr(downs + [tui.collapse_key, tui.quite_key]))
@@ -283,7 +283,7 @@ def test_menu_collapse_key_expands_group(rich, stub_curses):
 
 def test_menu_save_diff_writes_only_changes(rich, stub_curses, tmp_path):
     out = str(tmp_path / "diff.json")
-    rich._get("B2").value = True                 # one change from defaults
+    rich.get_option("B2").value = True                 # one change from defaults
     tui = Tui(rich, out)
     tui._menu_loop(FakeStdscr([tui.save_diff_key, ord(' '), tui.quite_key]))
     written = json.loads((tmp_path / "diff.json").read_text())
@@ -296,7 +296,7 @@ def test_menu_edit_int_option(rich, stub_curses):
     tui = Tui(rich, "out.json")
     downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
     tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("NUM").value == 42
+    assert rich.get_option("NUM").value == 42
 
 
 def test_menu_edit_int_option_rejects_invalid(rich, stub_curses):
@@ -304,7 +304,7 @@ def test_menu_edit_int_option_rejects_invalid(rich, stub_curses):
     tui = Tui(rich, "out.json")
     downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
     tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("NUM").value == 5           # kept the original on ValueError
+    assert rich.get_option("NUM").value == 5           # kept the original on ValueError
     FakeTextbox.result = "42"                     # restore for other tests
 
 
@@ -358,7 +358,7 @@ def test_menu_search_enter_toggles_match(rich, stub_curses):
     screen = FakeStdscr([tui.search_key, ord('B'), ord('2'),
                          curses.KEY_ENTER, tui.abort_key, -1, tui.quite_key])
     tui._menu_loop(screen)
-    assert rich._get("B2").value is True         # False -> True via search+enter
+    assert rich.get_option("B2").value is True         # False -> True via search+enter
 
 
 # Toggling an option in the TUI: the case from example.py, where turning off

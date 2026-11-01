@@ -273,13 +273,11 @@ def _compile_dependencies(core, option):
     with attribute access. The predicate is evaluated lazily, by which point the
     whole tree has been registered.
     """
-    if not option.dependencies:
-        return lambda x: True
-    if callable(option.dependencies):
-        return lambda x: option.dependencies(x)
+    if not option.dependencies: return None
+    if not isinstance(option.dependencies, str): raise ValueError(f"{option.name}: Only string deps can be compiled")
 
     def getter(x, key):
-        if core._get(key) is None:
+        if core.get_option(key) is None:
             # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
             if _enum_choice_exists(core, key):
                 return key

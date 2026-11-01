@@ -70,7 +70,7 @@ class EvaluationSession:
         return self._evaluate(option, "available", lambda: option.dependencies(self))
 
     def __getattr__(self, name):
-        opt = self.config._get(name)
+        opt = self.config.get_option(name)
         if opt is None:
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
@@ -247,7 +247,7 @@ class Core:
         return config_data
 
     def __getattr__(self, name):
-        opt = self._get(name)
+        opt = self.get_option(name)
         if opt is None:
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
@@ -262,7 +262,7 @@ class Core:
             return opt.options
         return opt.value
 
-    def _get(self, key):
+    def get_option(self, key):
         return self.option_map.get(key.upper())
 
     # ----------------------------------------------------------------------- #
@@ -294,7 +294,7 @@ class Core:
             # instead of recomputing availability for every key.
             if value is None:
                 continue
-            opt = self._get(key)
+            opt = self.get_option(key)
             if value != opt.default:
                 diff[key] = value
         return diff

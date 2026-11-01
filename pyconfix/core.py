@@ -20,6 +20,72 @@ terminal (that is :mod:`tui`) and nothing about orchestration (that is
 from .option import *
 
 
+class EvaluationSession:
+    """Evaluates dependencies and actions for one top-level call.
+
+    This is what dependency, ``needs`` and action functions receive as ``x``. One
+    session per call means nothing is shared between threads or stored on the
+    core. ``cache`` keeps each option's results for the session, unless the option
+    sets ``do_not_cache``. ``stack`` is the chain being evaluated (popped on
+    return, so a revisit is a real cycle and diamonds are fine).
+    """
+
+    def __init__(self, config):
+        self.config = config
+        self.cache = {}
+        self.stack = {}
+        self.trace = []
+
+    def invalidate_cache(self):
+        """Forget cached results, so the next evaluation sees current values."""
+        self.cache.clear()
+
+    def _evaluate(self, option, kind, compute):
+        # `kind` keeps an option's availability, needs and action result apart.
+        key = (kind, option.name)
+        if not option.do_not_cache and key in self.cache:
+            return self.cache[key]
+        if key in self.stack:
+            names = [name for _, name in self.stack]
+            names = names[list(self.stack).index(key):] + [option.name]
+            # ValueError, not AttributeError: this runs inside __getattr__, where
+            # an AttributeError would be swallowed by get()/hasattr().
+            raise ValueError(f"Dependency cycle detected: {' -> '.join(names)}")
+        self.stack[key] = True
+        result = compute()
+        self.stack.pop(key)
+        if not option.do_not_cache:
+            self.cache[key] = result
+        return result
+
+    def _execute_action(self, opt):
+        self.trace.append(opt.name)
+        if opt.needs and not self._evaluate(opt, "needs", lambda: opt.needs(self)):
+            return None
+        return self._evaluate(opt, "action", lambda: opt.default(self))
+
+    def _is_option_available(self, option):
+        if not option.dependencies: return True
+        if not callable(option.dependencies): raise ValueError('Not callable dependencies')
+        return self._evaluate(option, "available", lambda: option.dependencies(self))
+
+    def __getattr__(self, name):
+        opt = self.config._get(name)
+        if opt is None:
+            raise AttributeError(f"Invalid key: '{name}'")
+        if not self._is_option_available(opt):
+            if opt.option_type == ConfigOptionType.ACTION:
+                return lambda: None
+            return None
+        if opt.option_type == ConfigOptionType.ENUM:
+            return opt.choices[opt.value] if opt.value is not None else None
+        elif opt.option_type == ConfigOptionType.ACTION:
+            return lambda: self._execute_action(opt)
+        elif opt.option_type == ConfigOptionType.GROUP:
+            return opt.options
+        return opt.value
+
+
 class Core:
     def __init__(self):
         self.options = []
@@ -128,13 +194,20 @@ class Core:
                 else:
                     option.value = value
 
+    def create_evaluation_session(self):
+        """Create a session for evaluating options against the current values.
+
+        Cached results live as long as the session, so sharing one across
+        several checks (a whole TUI redraw, say) evaluates each option once.
+        Create a new session after any value changes, or it keeps returning the
+        old answers. Options with ``do_not_cache`` are always recomputed.
+
+        A session is not thread-safe; use one per thread.
+        """
+        return EvaluationSession(self)
+
     def _is_option_available(self, option):
-        def _is_option_available_impl(opt):
-            if not opt.dependencies:
-                return True
-            if not callable(opt.dependencies): raise ValueError('Not callable dependencies')
-            return opt.dependencies(self)
-        return _is_option_available_impl(option)
+        return self.create_evaluation_session()._is_option_available(option)
 
     def _sync_option_value(self, option, available):
         """Keep an option's value in sync with its availability.
@@ -150,42 +223,8 @@ class Core:
             option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
 
     def _execute_action(self, option):
-        trace = []
-        class ExecutionSession:
-            def __init__(self, config, root):
-                self.config = config
-                self.cache = {}
-                self.root = root
-
-            def _execute_action(self, opt):
-                trace.append(opt.name)
-                if opt.needs and not opt.needs(self):
-                    return None
-                if opt.name in self.cache:
-                    return self.cache[opt.name]
-                value = opt.default(self)
-                self.cache[opt.name] = value
-                return value
-
-            def __getattr__(self, name):
-                if name == self.root:
-                    raise AttributeError(f"Cycle detected: '{name}'")
-                opt = self.config._get(name)
-                if opt is None:
-                    raise AttributeError(f"Invalid key: '{name}'")
-                if not self.config._is_option_available(opt):
-                    if opt.option_type == ConfigOptionType.ACTION:
-                        return lambda: None
-                    return None
-                if opt.option_type == ConfigOptionType.ENUM:
-                    return opt.choices[opt.value] if opt.value is not None else None
-                elif opt.option_type == ConfigOptionType.ACTION:
-                    return lambda: self._execute_action(opt)
-                elif opt.option_type == ConfigOptionType.GROUP:
-                    return opt.options
-                return opt.value
-
-        return ExecutionSession(self, option.name)._execute_action(option), trace
+        session = self.create_evaluation_session()
+        return session._execute_action(option), session.trace
 
     def _dump(self, options):
         config_data = {}

@@ -382,7 +382,7 @@ def test_action_self_cycle_detected():
     def loop(x):
         return x.loop()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError, match="loop -> loop"):
         c.loop()
 
 

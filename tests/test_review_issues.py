@@ -67,6 +67,122 @@ def test_diff_omits_transitively_disabled_options(chain):
     assert chain().diff() == {}
 
 
+# Checking availability through dependencies is recursive, so a cycle must be
+# reported as a ValueError naming the cycle, not a bare RecursionError.
+
+@pytest.mark.parametrize("schema,cycle", [
+    ({"A": {"default": True, "deps": "B"},
+      "B": {"default": True, "deps": "A"}}, "A -> B -> A"),
+    ({"A": {"default": True, "deps": "B"},
+      "B": {"default": True, "deps": "C"},
+      "C": {"default": True, "deps": "A"}}, "A -> B -> C -> A"),
+])
+def test_schema_dependency_cycle_raises_named_value_error(tmp_path, monkeypatch, schema, cycle):
+    name = write_schema(tmp_path, monkeypatch, {"S": schema})
+    cfg = pyconfix().load_schem([name])
+    with pytest.raises(ValueError, match=cycle):
+        cfg.A
+
+
+def test_python_dependency_cycle_raises_named_value_error():
+    cfg = pyconfix()
+    cfg.add_options(
+        ConfigOption("A", True, dependencies=lambda x: x.B),
+        ConfigOption("B", True, dependencies=lambda x: x.A),
+    )
+    with pytest.raises(ValueError, match="A -> B -> A"):
+        cfg.A
+
+
+def test_dump_reports_dependency_cycle(tmp_path, monkeypatch):
+    name = write_schema(tmp_path, monkeypatch, {"S": {
+        "A": {"default": True, "deps": "B"},
+        "B": {"default": True, "deps": "A"}}})
+    with pytest.raises(ValueError, match="cycle"):
+        pyconfix().load_schem([name]).dump()
+
+
+def test_failed_cycle_check_does_not_poison_later_lookups(tmp_path, monkeypatch):
+    # The in-progress tracking must be cleaned up after an error, so unrelated
+    # options still evaluate normally afterwards.
+    name = write_schema(tmp_path, monkeypatch, {"S": {
+        "A": {"default": True, "deps": "B"},
+        "B": {"default": True, "deps": "A"},
+        "ON": True,
+        "D": {"default": 4, "deps": "ON"}}})
+    cfg = pyconfix().load_schem([name])
+    with pytest.raises(ValueError):
+        cfg.A
+    assert cfg.D == 4
+
+
+# Availability is memoized per top-level lookup: an option reached by several
+# routes is evaluated once, so stacked diamonds stay linear, not exponential.
+
+def counted(calls, name, predicate):
+    def dependency(x):
+        calls[name] = calls.get(name, 0) + 1
+        return predicate(x)
+    return dependency
+
+
+def stacked_diamonds(layers, calls):
+    options = [ConfigOption("L0", True)]
+    for i in range(1, layers):
+        prev = f"L{i - 1}"
+        options += [
+            ConfigOption(f"X{i}", True, dependencies=counted(
+                calls, f"X{i}", lambda x, p=prev: getattr(x, p))),
+            ConfigOption(f"Y{i}", True, dependencies=counted(
+                calls, f"Y{i}", lambda x, p=prev: getattr(x, p))),
+            ConfigOption(f"L{i}", True, dependencies=counted(
+                calls, f"L{i}", lambda x, a=f"X{i}", b=f"Y{i}": getattr(x, a) and getattr(x, b))),
+        ]
+    cfg = pyconfix()
+    cfg.add_options(*options)
+    return cfg
+
+
+def test_stacked_diamonds_evaluate_each_option_once():
+    calls = {}
+    cfg = stacked_diamonds(25, calls)
+    assert cfg.L24 is True
+    assert set(calls.values()) == {1}
+
+
+def test_cached_false_availability_is_reused():
+    calls = {}
+    cfg = pyconfix()
+    cfg.add_options(
+        ConfigOption("OFF", True, dependencies=counted(calls, "OFF", lambda x: False)),
+        ConfigOption("TOP", True, dependencies=lambda x: x.OFF or x.OFF),
+    )
+    assert cfg.TOP is None
+    assert calls == {"OFF": 1}
+
+
+def test_availability_cache_does_not_collide_with_action_value():
+    cfg = pyconfix()
+
+    @cfg.action_option(dependencies=lambda x: True)
+    def build(x):
+        return 7
+
+    cfg.add_options(ConfigOption("USES", True, dependencies=lambda x: x.build() == 7))
+    assert cfg.USES is True
+
+
+def test_availability_cache_does_not_outlive_the_lookup():
+    cfg = pyconfix()
+    cfg.add_options(
+        ConfigOption("M", False),
+        ConfigOption("A", 1, dependencies=lambda x: x.M),
+    )
+    assert cfg.A is None
+    cfg.apply_config(overlay={"M": True})
+    assert cfg.A == 1
+
+
 # --------------------------------------------------------------------------- #
 # 3. Group dependencies must cascade to children for groups built in Python,
 #    not only for groups loaded from a schema. Attribute access and dump()
@@ -270,3 +386,133 @@ def test_action_option_rejects_string_dependency():
 def test_schema_string_dependencies_still_allowed(chain):
     # The JSON schema compiles its strings before adding, so it is unaffected.
     assert chain(MASTER=True).A is True
+
+
+# --------------------------------------------------------------------------- #
+# do_not_cache: an option opts out of the per-session cache, so its availability
+# and action result are recomputed every time. Actions and dependencies share
+# one session class, which owns the caching and checks this flag.
+# --------------------------------------------------------------------------- #
+
+def test_do_not_cache_defaults_to_false():
+    assert ConfigOption("A", True).do_not_cache is False
+
+
+def test_do_not_cache_survives_clone_and_to_dict():
+    option = ConfigOption("A", True, do_not_cache=True)
+    assert option.clone_with(name="B").do_not_cache is True
+    assert option.to_dict()["do_not_cache"] is True
+
+
+def test_do_not_cache_from_schema(tmp_path, monkeypatch):
+    name = write_schema(tmp_path, monkeypatch, {"S": {
+        "ON": {"default": True, "do_not_cache": True},
+        "OFF": True,
+    }})
+    cfg = pyconfix().load_schem([name])
+    assert cfg._get("ON").do_not_cache is True
+    assert cfg._get("OFF").do_not_cache is False
+
+
+def test_do_not_cache_is_reserved_in_schema(tmp_path, monkeypatch):
+    name = write_schema(tmp_path, monkeypatch, {"S": {"do_not_cache": True}})
+    with pytest.raises(ValueError, match="reserved"):
+        pyconfix().load_schem([name])
+
+
+def test_do_not_cache_on_alias_typed_option(tmp_path, monkeypatch):
+    name = write_schema(tmp_path, monkeypatch, {"S": {
+        "TRI": {"type": "tri-state", "do_not_cache": True}}})
+    cfg = pyconfix()
+    cfg.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "OFF"])
+    cfg.load_schem([name])
+    assert cfg._get("TRI").do_not_cache is True
+
+
+@pytest.mark.parametrize("do_not_cache,expected", [(False, 1), (True, 2)])
+def test_availability_respects_do_not_cache(do_not_cache, expected):
+    calls = {}
+    cfg = pyconfix()
+    cfg.add_options(
+        ConfigOption("SHARED", True, do_not_cache=do_not_cache,
+                     dependencies=counted(calls, "SHARED", lambda x: True)),
+        ConfigOption("TOP", True, dependencies=lambda x: x.SHARED and x.SHARED),
+    )
+    assert cfg.TOP is True
+    assert calls == {"SHARED": expected}
+
+
+@pytest.mark.parametrize("do_not_cache,expected", [(False, 1), (True, 2)])
+def test_action_result_respects_do_not_cache(do_not_cache, expected):
+    runs = []
+    cfg = pyconfix()
+
+    @cfg.action_option(do_not_cache=do_not_cache)
+    def leaf(x):
+        runs.append(1)
+        return len(runs)
+
+    @cfg.action_option()
+    def parent(x):
+        x.leaf()
+        return x.leaf()
+
+    value, trace = cfg.parent()
+    assert value == expected
+    assert len(runs) == expected
+    assert trace.count("leaf") == 2
+
+
+def test_group_action_option_accepts_do_not_cache():
+    cfg = pyconfix()
+    group = cfg.group_option("G")
+
+    @group.action_option(do_not_cache=True)
+    def act(x):
+        return 1
+
+    assert cfg._get("act").do_not_cache is True
+
+
+def test_do_not_cache_still_detects_cycles():
+    cfg = pyconfix()
+    cfg.add_options(
+        ConfigOption("A", True, do_not_cache=True, dependencies=lambda x: x.B),
+        ConfigOption("B", True, do_not_cache=True, dependencies=lambda x: x.A),
+    )
+    with pytest.raises(ValueError, match="A -> B -> A"):
+        cfg.A
+
+
+def test_action_cycle_not_through_the_starting_action():
+    cfg = pyconfix()
+
+    @cfg.action_option()
+    def a(x):
+        return x.b()
+
+    @cfg.action_option()
+    def b(x):
+        return x.c()
+
+    @cfg.action_option()
+    def c(x):
+        return x.b()
+
+    with pytest.raises(ValueError, match="b -> c -> b"):
+        cfg.a()
+
+
+def test_dependency_reading_a_running_action_is_not_a_cycle():
+    # Running an action and checking its availability are separate evaluations.
+    cfg = pyconfix()
+
+    @cfg.action_option()
+    def outer(x):
+        return x.watcher()
+
+    @cfg.action_option(dependencies=lambda x: bool(x.outer))
+    def watcher(x):
+        return 5
+
+    assert cfg.outer()[0] == 5

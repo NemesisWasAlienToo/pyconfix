@@ -51,6 +51,8 @@ def tokenize(expression: str):
             i += 1
             while i < n and expression[i] != "'":
                 i += 1
+            if i >= n:
+                raise ValueError(f"Unterminated string literal: {expression[start:]}")
             i += 1  # include closing quote
             tokens.append(expression[start:i])
         elif char in ('&', '|', '!', '=', '>', '<', '+', '-', '*', '/', '^', '%'):
@@ -75,6 +77,7 @@ def shunting_yard(tokens, precedence=None):
     (<<,>> above &, above ^, above |) and kept above the comparison operators:
       !   : 10
       **  : 9 (power)
+      u-  : 8.5 (unary minus; below ** as in Python, so -2**2 == -4)
       *, /, % : 8
       +, - : 7
       <<, >> : 6
@@ -89,6 +92,7 @@ def shunting_yard(tokens, precedence=None):
         precedence = {
             '!': 10,
             '**': 9,
+            'u-': 8.5,
             '*': 8, '/': 8, '%': 8,
             '+': 7, '-': 7,
             '<<': 6, '>>': 6,
@@ -100,12 +104,21 @@ def shunting_yard(tokens, precedence=None):
             '||': 0,
         }
     right_associative = {'!', '**'}
+    # Prefix operators have no left operand, so pushing one never pops anything.
+    prefix = {'!', 'u-'}
     output = []
     operators = []
+    prev = None
     for token in tokens:
+        # A '-' is unary when nothing that could be a left operand precedes it.
+        if token == '-' and (prev is None or prev == '(' or prev in precedence):
+            token = 'u-'
+        prev = token
         # Check if token is numeric, identifier, or a quoted string.
         if token.replace('.', '', 1).isdigit() or token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
             output.append(token)
+        elif token in prefix:
+            operators.append(token)
         elif token in precedence:
             if token in right_associative:
                 while operators and operators[-1] != '(' and precedence[operators[-1]] > precedence[token]:
@@ -142,6 +155,8 @@ class BooleanExpressionParser:
     def eval_operator(self, op, right, left=None):
         if op == '!':
             return not bool(right)
+        elif op == 'u-':
+            return -right
         elif op == '&&':
             return bool(left) and bool(right)
         elif op == '||':
@@ -212,9 +227,9 @@ class BooleanExpressionParser:
                 else:
                     stack.append(self.getter(token))
             else:
-                if token == '!':
+                if token in ('!', 'u-'):
                     if not stack:
-                        raise ValueError("Missing operand for '!'")
+                        raise ValueError(f"Missing operand for '{token}'")
                     right = stack.pop()
                     stack.append(self.eval_operator(token, right))
                 else:

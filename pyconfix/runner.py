@@ -95,7 +95,7 @@ class pyconfix:
                 ``get().options`` directly, which bypasses that)."""
                 return core.add_options(*options, parent=self.group)
 
-            def action_option(self, name=None, dependencies=None, needs=None):
+            def action_option(self, name=None, dependencies=None, needs=None, do_not_cache=False):
                 def decorator(func):
                     new_option = ConfigOption(
                         name=name or func.__name__,
@@ -103,6 +103,7 @@ class pyconfix:
                         default=func,
                         dependencies=dependencies,
                         needs=needs,
+                        do_not_cache=do_not_cache,
                         description=func.__doc__ or ""
                     )
                     # Same add path as everything else: it enforces the global
@@ -113,15 +114,16 @@ class pyconfix:
                 return decorator
         return GroupProxy(group)
 
-    def action_option(self, name=None, dependencies=None, needs=None):
+    def action_option(self, name=None, dependencies=None, needs=None, do_not_cache=False):
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
         :param dependencies: Optional dependency expression or function.
         :param needs: Optional needs function.
+        :param do_not_cache: Run the action every time instead of once per session.
         :return: Decorator that registers the action.
         """
-        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, needs=needs)
+        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, needs=needs, do_not_cache=do_not_cache)
 
     def group_option(self, name, dependencies=None):
         """

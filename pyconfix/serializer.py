@@ -130,7 +130,7 @@ _FIELD_ALIASES = {
 # used as option names, since a name and a field share the same dict namespace.
 _RESERVED_NAMES = (
     {"type", "default", "choices", "description", "data",
-     "dependencies", "needs", "options", "include"}
+     "dependencies", "needs", "options", "include", "do_not_cache"}
     | set(_FIELD_ALIASES)
 )
 
@@ -221,6 +221,7 @@ def _parse_option(core, name, option_data, base_path=None):
         data=option_data.get('data'),
         dependencies=option_data.get('dependencies', ""),
         needs=option_data.get('needs', ""),
+        do_not_cache=option_data.get('do_not_cache', False),
         choices=option_data.get('choices', []),
         options=[]
     )
@@ -235,6 +236,8 @@ def _parse_option(core, name, option_data, base_path=None):
             name=name,
             default=option_data.get('default', custom_type.default),
             description=option_data.get('description', custom_type.description),
+            data=option_data.get('data', custom_type.data),
+            do_not_cache=option_data.get('do_not_cache', custom_type.do_not_cache),
             dependencies=option_data.get('dependencies', custom_type.dependencies),
         )
     if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
@@ -275,26 +278,18 @@ def _compile_dependencies(core, option):
     if callable(option.dependencies):
         return lambda x: option.dependencies(x)
 
-    root_upper = option.name.upper()
-
-    def getter(key):
-        if key.upper() == root_upper:
-            raise ValueError(f"Cycle detected in the dependency of {option.name}")
-        opt = core._get(key)
-        if opt is None:
+    def getter(x, key):
+        if core._get(key) is None:
+            # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
             if _enum_choice_exists(core, key):
                 return key
             raise ValueError(f"Invalid token: {key}")
-        if not core._is_option_available(opt):
-            if opt.option_type == ConfigOptionType.ACTION:
-                return lambda : (None, [])
-            return None
-        if opt.option_type == ConfigOptionType.ENUM:
-            return opt.choices[opt.value] if opt.value is not None else opt.default
-        return opt.value if opt.value is not None else opt.default
+        # Resolve through the evaluation session `x`, so values match attribute
+        # access and the chain of options being evaluated carries over (cycles).
+        return getattr(x, key)
 
-    parser = BooleanExpressionParser(getter=getter)
-    return lambda x: parser.evaluate_postfix(option.postfix_dependencies)
+    return lambda x: BooleanExpressionParser(
+        getter=lambda key: getter(x, key)).evaluate_postfix(option.postfix_dependencies)
 
 
 def finalize_dependencies(core):

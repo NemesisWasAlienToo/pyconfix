@@ -8,8 +8,8 @@ def create_database_module():
     module = pyconfix()
     # The type is deduced from the value, so name + default is enough.
     module.add_options(
-        ConfigOption('DATABSE_ENABLED', True),
-        ConfigOption('DB_HOST', 'localhost', dependencies=lambda x: x.DATABSE_ENABLED),
+        ConfigOption('DATABASE_ENABLED', True),
+        ConfigOption('DB_HOST', 'localhost', dependencies=lambda x: x.DATABASE_ENABLED),
         ConfigOption('DB_PORT', 5432),
     )
 

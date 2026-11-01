@@ -19,7 +19,7 @@ class ConfigOptionType(StrEnum):
 
 class ConfigOption:
     def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
-                 dependencies=None, options=None, choices=None, expanded=False, needs=None):
+                 dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
 
@@ -92,6 +92,7 @@ class ConfigOption:
         self.choices = choices or []
         self.expanded = expanded
         self.needs = needs
+        self.do_not_cache = do_not_cache
 
         if dependencies and not callable(dependencies):
             self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
@@ -107,6 +108,7 @@ class ConfigOption:
             'options': [opt.to_dict() for opt in self.options],
             'choices': self.choices,
             'needs': self.needs,
+            'do_not_cache': self.do_not_cache,
         }
     
     def clone_with(self, **kwargs):
@@ -125,6 +127,7 @@ class ConfigOption:
             'choices': self.choices,
             'expanded': self.expanded,
             'needs': self.needs,
+            'do_not_cache': self.do_not_cache,
         }
         params.update(kwargs)
         return ConfigOption(**params)

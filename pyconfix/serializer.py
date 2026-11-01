@@ -286,8 +286,7 @@ def _compile_dependencies(core, option):
         # access and the chain of options being evaluated carries over (cycles).
         return getattr(x, key)
 
-    return lambda x: BooleanExpressionParser(
-        getter=lambda key: getter(x, key)).evaluate_postfix(option.postfix_dependencies)
+    return lambda x: BooleanExpressionParser().evaluate_postfix(option.postfix_dependencies, getter=lambda key: getter(x, key))
 
 
 def finalize_dependencies(core):

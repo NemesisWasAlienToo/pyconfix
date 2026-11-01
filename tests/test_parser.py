@@ -12,8 +12,8 @@ from pyconfix.parser import tokenize, shunting_yard, BooleanExpressionParser
 
 def ev(expr, **values):
     """Tokenize -> postfix -> evaluate, resolving identifiers from ``values``."""
-    parser = BooleanExpressionParser(getter=lambda k: values[k])
-    return parser.evaluate_postfix(shunting_yard(tokenize(expr)))
+    return BooleanExpressionParser().evaluate_postfix(
+        shunting_yard(tokenize(expr)), getter=lambda k: values[k])
 
 
 # --------------------------------------------------------------------------- #
@@ -129,9 +129,9 @@ def test_missing_binary_operand():
 
 
 def test_missing_unary_operand():
-    parser = BooleanExpressionParser(getter=lambda k: None)
+    parser = BooleanExpressionParser()
     with pytest.raises(ValueError):
-        parser.evaluate_postfix(["!"])
+        parser.evaluate_postfix(["!"], getter=lambda k: None)
 
 
 # --------------------------------------------------------------------------- #
@@ -166,7 +166,7 @@ def test_remaining_comparison_operators(expr, expected):
 
 
 def test_eval_operator_unknown_raises():
-    parser = BooleanExpressionParser(getter=lambda k: None)
+    parser = BooleanExpressionParser()
     with pytest.raises(ValueError):
         parser.eval_operator("??", 1, 1)
 
@@ -176,6 +176,6 @@ def test_float_literal_in_postfix():
 
 
 def test_extra_items_on_stack_raises():
-    parser = BooleanExpressionParser(getter=lambda k: None)
+    parser = BooleanExpressionParser()
     with pytest.raises(ValueError):
-        parser.evaluate_postfix(["1", "2"])   # two operands, no operator
+        parser.evaluate_postfix(["1", "2"], getter=lambda k: None)   # two operands, no operator

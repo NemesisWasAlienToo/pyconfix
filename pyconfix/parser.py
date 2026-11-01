@@ -148,8 +148,7 @@ class BooleanExpressionParser:
     Evaluates boolean and arithmetic expressions using tokenizing,
     postfix conversion, and evaluation routines.
     """
-    def __init__(self, getter, enumerator=None):
-        self.getter = getter
+    def __init__(self, enumerator=None):
         self.enumerator = enumerator if enumerator is not None else {}
 
     def eval_operator(self, op, right, left=None):
@@ -201,13 +200,14 @@ class BooleanExpressionParser:
         else:
             raise ValueError(f"Unknown operator: {op}")
 
-    def evaluate_postfix(self, tokens):
+    def evaluate_postfix(self, tokens, getter):
         """
         Evaluates a postfix expression given:
         - tokens: list of tokens in postfix order,
         - operand_func: a function that returns the value for a given token,
         - eval_operator: a function that applies an operator.
         """
+        self.getter = getter
         stack = []
         for token in tokens:
             if token == 'true':

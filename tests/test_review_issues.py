@@ -22,8 +22,8 @@ def write_schema(tmp_path, monkeypatch, schema, name="schema.json"):
 
 
 def ev(expr, **values):
-    parser = BooleanExpressionParser(getter=lambda k: values[k])
-    return parser.evaluate_postfix(shunting_yard(tokenize(expr)))
+    return BooleanExpressionParser().evaluate_postfix(
+        shunting_yard(tokenize(expr)), getter=lambda k: values[k])
 
 
 # --------------------------------------------------------------------------- #

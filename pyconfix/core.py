@@ -69,6 +69,9 @@ class EvaluationSession:
         if not callable(option.dependencies): raise ValueError('Not callable dependencies')
         return self._evaluate(option, "available", lambda: option.dependencies(self))
 
+    def get_option(self, name):
+        return self.config.get_option(name)
+
     def __getattr__(self, name):
         opt = self.config.get_option(name)
         if opt is None:
@@ -261,9 +264,6 @@ class Core:
         elif opt.option_type == ConfigOptionType.GROUP:
             return opt.options
         return opt.value
-
-    def get_option(self, key):
-        return self.option_map.get(key.upper())
 
     # ----------------------------------------------------------------------- #
     # Applying selections and producing output data

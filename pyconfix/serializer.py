@@ -277,9 +277,9 @@ def _compile_dependencies(core, option):
     if not isinstance(option.dependencies, str): raise ValueError(f"{option.name}: Only string deps can be compiled")
 
     def getter(x, key):
-        if core.get_option(key) is None:
+        if x.get_option(key) is None:
             # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
-            if _enum_choice_exists(core, key):
+            if _enum_choice_exists(x.config, key):
                 return key
             raise ValueError(f"Invalid token: {key}")
         # Resolve through the evaluation session `x`, so values match attribute

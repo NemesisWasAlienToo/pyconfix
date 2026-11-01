@@ -204,8 +204,7 @@ class BooleanExpressionParser:
         """
         Evaluates a postfix expression given:
         - tokens: list of tokens in postfix order,
-        - operand_func: a function that returns the value for a given token,
-        - eval_operator: a function that applies an operator.
+        - getter: a function that returns the value for a given token.
         """
         stack = []
         for token in tokens:

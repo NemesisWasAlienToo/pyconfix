@@ -420,14 +420,14 @@ def test_schema_enum_out_of_range_default_is_coerced():
     e = opts[0]
     assert e.option_type == ConfigOptionType.ENUM
     assert e.default == "A"          # coerced to first choice, like ConfigOption does
-    assert e.value == 0
+    assert e.value == "A"
 
 
 def test_schema_enum_valid_default_unaffected():
     opts = serializer.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "B"}})
     e = opts[0]
     assert e.default == "B"
-    assert e.value == 1
+    assert e.value == "B"
 
 
 def test_schema_enum_matches_direct_configoption_coercion():

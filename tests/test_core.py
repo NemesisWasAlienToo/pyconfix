@@ -246,7 +246,7 @@ def test_sync_restores_enum_to_default_index(core):
     core._sync_option_value(m, available=False)
     assert m.value is None
     core._sync_option_value(m, available=True)
-    assert m.value == 1   # index of default "B"
+    assert m.value == "B"
 
 
 # --------------------------------------------------------------------------- #
@@ -262,7 +262,7 @@ def test_apply_sets_values_and_defaults(core):
 def test_apply_enum_by_choice_string(core):
     core.apply_config({"MODE": "C"})
     assert core.MODE == "C"
-    assert core.get_option("MODE").value == 2
+    assert core.get_option("MODE").value == "C"
 
 
 def test_apply_invalid_enum_value_raises_named_error(core):
@@ -279,7 +279,7 @@ def test_apply_blank_enum_value_restores_default(core):
     # An empty value is treated as "unset" and restores the default.
     core.apply_config({"MODE": ""})
     assert core.MODE == "B"                      # the default
-    assert core.get_option("MODE").value == 1
+    assert core.get_option("MODE").value == "B"
 
 
 # --------------------------------------------------------------------------- #
@@ -503,3 +503,52 @@ def test_python_api_string_dependency_is_compiled():
     assert c.N is None
     c.get_option("F").value = True
     assert c.N == 1
+
+
+# --------------------------------------------------------------------------- #
+# Enums in callable dependencies: `x.NAME` gives the choice name
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def tri_state():
+    c = Core()
+    c.add_options(
+        ConfigOption("FEATURE", True),
+        ConfigOption("TRI", "DISABLED", choices=["INTEGRATED", "MODULE", "DISABLED"],
+                     dependencies=lambda x: x.ENABLED_TRI),
+        ConfigOption("ENABLED_TRI", True),
+        ConfigOption("N", 1, dependencies=lambda x: x.FEATURE and x.TRI == "DISABLED"),
+    )
+    return c
+
+
+def test_callable_dependency_compares_enum_to_its_choice_name(tri_state):
+    assert tri_state.N == 1
+
+
+def test_callable_dependency_sees_changed_enum_choice(tri_state):
+    tri_state.apply_config({"TRI": "MODULE"})
+    assert tri_state.N is None
+    tri_state.apply_config({"TRI": "DISABLED"})
+    assert tri_state.N == 1
+
+
+def test_callable_dependency_sees_first_choice(tri_state):
+    # The first choice must compare by name, not as a falsy index 0.
+    seen = []
+    tri_state.add_options(ConfigOption("W", 1, dependencies=lambda x: seen.append(x.TRI) or True))
+    tri_state.apply_config({"TRI": "INTEGRATED"})
+    assert tri_state.W == 1
+    assert seen == ["INTEGRATED"]
+
+
+def test_callable_dependency_stops_at_the_other_condition(tri_state):
+    tri_state.apply_config({"FEATURE": False})
+    assert tri_state.N is None
+
+
+def test_callable_dependency_reads_disabled_enum_as_none(tri_state):
+    tri_state.apply_config({"ENABLED_TRI": False})
+    assert tri_state.TRI is None
+    assert tri_state.N is None
+

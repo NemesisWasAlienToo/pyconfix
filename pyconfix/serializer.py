@@ -243,11 +243,10 @@ def _parse_option(core, name, option_data, base_path=None):
         option.options = parse_options(core, option_data['options'], base_path)
     elif option.option_type == ConfigOptionType.ENUM:
         # Built as STRING above, so ConfigOption.__init__ did not coerce an
-        # out-of-range default; do it here (mirroring the ENUM constructor path)
-        # instead of letting choices.index() raise on a bad default.
+        # out-of-range default; do it here (mirroring the ENUM constructor path).
         if option.default not in option.choices:
             option.default = option.choices[0]
-        option.value = option.choices.index(option.default)
+        option.value = option.default
 
     return option
 

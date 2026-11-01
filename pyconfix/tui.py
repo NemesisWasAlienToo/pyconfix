@@ -157,7 +157,7 @@ class Tui:
             elif option.value is None and option.option_type != ConfigOptionType.GROUP:
                 value = "[disabled]"
             elif option.option_type == ConfigOptionType.ENUM:
-                value = option.choices[option.value][:10] + "..." if len(option.choices[option.value]) > 10 else option.choices[option.value]
+                value = option.value[:10] + "..." if len(option.value) > 10 else option.value
             elif option.option_type == ConfigOptionType.BOOL:
                 value = "True" if option.value else "False"
             elif option.option_type in [ConfigOptionType.INT, ConfigOptionType.STRING]:
@@ -440,7 +440,7 @@ class Tui:
     def _edit_multiple_choice_option(self, stdscr, option):
         curses.curs_set(0)
         max_y, max_x = stdscr.getmaxyx()
-        current_choice = option.value if option.value is not None else 0
+        current_choice = option.choices.index(option.value) if option.value is not None else 0
         original_choice = option.value
         while True:
             stdscr.clear()
@@ -461,7 +461,7 @@ class Tui:
             elif key == curses.KEY_DOWN and current_choice < len(option.choices) - 1:
                 current_choice += 1
             elif key in (curses.KEY_ENTER, 10, 13):
-                option.value = current_choice
+                option.value = option.choices[current_choice]
                 break
             elif key == self.abort_key:
                 option.value = original_choice

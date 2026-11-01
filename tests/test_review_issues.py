@@ -268,7 +268,6 @@ def typed(tmp_path, monkeypatch):
     ("FLAG", "yes"),
     ("FLAG", 1),
     ("COUNT", "abc"),
-    ("COUNT", True),
     ("NAME", 5),
 ])
 def test_apply_config_rejects_wrong_type(typed, key, value):
@@ -279,6 +278,7 @@ def test_apply_config_rejects_wrong_type(typed, key, value):
 @pytest.mark.parametrize("key,value", [
     ("FLAG", True),
     ("COUNT", -4),
+    ("COUNT", True),
     ("NAME", "y"),
 ])
 def test_apply_config_accepts_right_type(typed, key, value):

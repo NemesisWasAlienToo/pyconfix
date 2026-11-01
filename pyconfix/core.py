@@ -80,9 +80,7 @@ class EvaluationSession:
             if opt.option_type == ConfigOptionType.ACTION:
                 return lambda: None
             return None
-        if opt.option_type == ConfigOptionType.ENUM:
-            return opt.choices[opt.value] if opt.value is not None else None
-        elif opt.option_type == ConfigOptionType.ACTION:
+        if opt.option_type == ConfigOptionType.ACTION:
             return lambda: self._execute_action(opt)
         elif opt.option_type == ConfigOptionType.GROUP:
             return opt.options
@@ -182,20 +180,10 @@ class Core:
                 self._apply_config_to_options(option.options, saved_config)
             elif option.name in saved_config:
                 value = saved_config[option.name]
-                if option.option_type == ConfigOptionType.ENUM:
-                    # A saved config file is user-facing and may be stale. An
-                    # empty/blank value restores the default; any other value
-                    # that is not a valid choice is a real error, so raise a
-                    # clear, named message instead of a bare "not in list".
-                    choice = value if value else option.default
-                    if choice not in option.choices:
-                        raise ValueError(
-                            f"Invalid value '{value}' for enum option '{option.name}'; "
-                            f"expected one of {option.choices}"
-                        )
-                    option.value = option.choices.index(choice)
-                else:
-                    option.value = value
+                # A saved config file may be stale: a blank enum restores the default.
+                if option.option_type == ConfigOptionType.ENUM and not value:
+                    value = option.default
+                option.value = value
 
     def create_evaluation_session(self):
         """Create a session for evaluating options against the current values.
@@ -223,7 +211,7 @@ class Core:
             if option.option_type != ConfigOptionType.GROUP:
                 option.value = None
         elif option.value is None:
-            option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
+            option.value = option.default
 
     def _execute_action(self, option):
         session = self.create_evaluation_session()
@@ -240,12 +228,7 @@ class Core:
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
-                # option.default is the choice string for enums, so this emits a
-                # string for the disabled/None path just like the active path below.
-                default_value = option.default
-                value_to_save = default_value if option.value is None else (
-                    option.choices[option.value] if option.option_type == ConfigOptionType.ENUM
-                    else option.value)
+                value_to_save = option.default if option.value is None else option.value
                 config_data[option.name] = None if not self._is_option_available(option) else value_to_save
         return config_data
 
@@ -257,9 +240,7 @@ class Core:
             if opt.option_type == ConfigOptionType.ACTION:
                 return lambda : (None, [])
             return None
-        if opt.option_type == ConfigOptionType.ENUM:
-            return opt.choices[opt.value] if opt.value is not None else None
-        elif opt.option_type == ConfigOptionType.ACTION:
+        if opt.option_type == ConfigOptionType.ACTION:
             return lambda : self._execute_action(opt)
         elif opt.option_type == ConfigOptionType.GROUP:
             return opt.options

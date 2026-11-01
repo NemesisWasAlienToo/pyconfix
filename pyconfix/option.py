@@ -29,6 +29,12 @@ def _enum_choice_exists(config, key):
 
 
 class ConfigOption:
+    VALUE_TYPES = {
+        ConfigOptionType.BOOL: bool,
+        ConfigOptionType.INT: int,
+        ConfigOptionType.STRING: str,
+    }
+
     def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
                  dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False):
         if any(c.isspace() for c in name):
@@ -95,7 +101,9 @@ class ConfigOption:
         self.name = name
         self.option_type = option_type
         self.default = default
-        self.value = choices.index(default) if (option_type == ConfigOptionType.ENUM) else default
+        # Not the setter: a schema option is built as STRING before its real type
+        # is known, and defaults are not user values.
+        self._value = default
         self.data = data
         self.description = description
         self.dependencies = self._compile_dependencies(dependencies)
@@ -132,6 +140,25 @@ class ConfigOption:
 
         return lambda x: BooleanExpressionParser().evaluate_postfix(
             self.postfix_dependencies, getter=lambda key: getter(x, key))
+
+    @property
+    def value(self):
+        """The current value. An enum holds the name of its choice."""
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        """Store a value, raising ValueError if it does not fit the option's type.
+
+        None is how a disabled option is stored.
+        """
+        if self.option_type == ConfigOptionType.ENUM:
+            valid = value in self.choices
+        else:
+            valid = isinstance(value, self.VALUE_TYPES.get(self.option_type, object))
+        if value is not None and not valid:
+            raise ValueError(f"Invalid value '{value}' for {self.option_type} option '{self.name}'")
+        self._value = value
 
     def to_dict(self):
         return {

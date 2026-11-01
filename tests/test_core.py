@@ -496,9 +496,10 @@ def test_action_option_callable_dependency_disables_action():
     assert c.gated() == (1, ["gated"])
 
 
-def test_python_api_string_dependency_is_rejected():
-    # String dependency expressions are for the JSON schema; through the Python
-    # API a callable must be used, so a raw string is rejected when added.
+def test_python_api_string_dependency_is_compiled():
     c = Core()
-    with pytest.raises(ValueError):
-        c.add_options(opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
+    c.add_options(opt("F", ConfigOptionType.BOOL, default=False),
+                  opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
+    assert c.N is None
+    c.get_option("F").value = True
+    assert c.N == 1

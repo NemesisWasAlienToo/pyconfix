@@ -17,6 +17,17 @@ class ConfigOptionType(StrEnum):
     GROUP = "group"
     EXTERNAL = "external"
 
+def _enum_choice_exists(config, key):
+    """True if ``key`` names a choice of some ENUM option — used when an enum
+    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
+    key_upper = key.upper()
+    return any(
+        opt.option_type == ConfigOptionType.ENUM
+        and any(choice.upper() == key_upper for choice in opt.choices)
+        for opt in config.option_map.values()
+    )
+
+
 class ConfigOption:
     def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
                  dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False):
@@ -87,15 +98,40 @@ class ConfigOption:
         self.value = choices.index(default) if (option_type == ConfigOptionType.ENUM) else default
         self.data = data
         self.description = description
-        self.dependencies = dependencies
+        self.dependencies = self._compile_dependencies(dependencies)
         self.options = options or []
         self.choices = choices or []
         self.expanded = expanded
         self.needs = needs
         self.do_not_cache = do_not_cache
 
-        if dependencies and not callable(dependencies):
-            self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
+    def _compile_dependencies(self, dependencies):
+        """Compile a dependency expression into a ``predicate(x) -> bool``.
+
+        ``x`` is the evaluation session, so names resolve when the predicate runs.
+        By then the whole tree is registered, whatever order options were added in.
+        """
+        if not dependencies:
+            return None
+        if callable(dependencies):
+            return dependencies
+        if not isinstance(dependencies, str):
+            raise ValueError(f"The 'dependencies' for option {self.name} must be a string or a callable")
+
+        self.postfix_dependencies = shunting_yard(tokenize(dependencies))
+
+        def getter(x, key):
+            if x.get_option(key) is None:
+                # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
+                if _enum_choice_exists(x.config, key):
+                    return key
+                raise ValueError(f"Invalid token: {key}")
+            # Resolve through the evaluation session `x`, so values match attribute
+            # access and the chain of options being evaluated carries over (cycles).
+            return getattr(x, key)
+
+        return lambda x: BooleanExpressionParser().evaluate_postfix(
+            self.postfix_dependencies, getter=lambda key: getter(x, key))
 
     def to_dict(self):
         return {

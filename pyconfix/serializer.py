@@ -20,7 +20,6 @@ without touching the rest of the library. JSON is built in.
 import json
 import os
 
-from .parser import BooleanExpressionParser
 from .option import ConfigOption, ConfigOptionType
 
 
@@ -250,43 +249,7 @@ def _parse_option(core, name, option_data, base_path=None):
             option.default = option.choices[0]
         option.value = option.choices.index(option.default)
 
-    option.dependencies = _compile_dependencies(core, option)
     return option
-
-
-def _enum_choice_exists(core, key):
-    """True if ``key`` names a choice of some ENUM option — used when an enum
-    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
-    key_upper = key.upper()
-    return any(
-        opt.option_type == ConfigOptionType.ENUM
-        and any(choice.upper() == key_upper for choice in opt.choices)
-        for opt in core.option_map.values()
-    )
-
-
-def _compile_dependencies(core, option):
-    """Compile ``option.dependencies`` into a ``predicate(x) -> bool``.
-
-    Name resolution reuses ``core._get`` (case-insensitive, descends into groups)
-    rather than re-walking the option tree, so there is a single resolver shared
-    with attribute access. The predicate is evaluated lazily, by which point the
-    whole tree has been registered.
-    """
-    if not option.dependencies: return None
-    if not isinstance(option.dependencies, str): raise ValueError(f"{option.name}: Only string deps can be compiled")
-
-    def getter(x, key):
-        if x.get_option(key) is None:
-            # A bare enum choice used as a literal token (e.g. LEVEL == DEBUG).
-            if _enum_choice_exists(x.config, key):
-                return key
-            raise ValueError(f"Invalid token: {key}")
-        # Resolve through the evaluation session `x`, so values match attribute
-        # access and the chain of options being evaluated carries over (cycles).
-        return getattr(x, key)
-
-    return lambda x: BooleanExpressionParser().evaluate_postfix(option.postfix_dependencies, getter=lambda key: getter(x, key))
 
 
 def finalize_dependencies(core):

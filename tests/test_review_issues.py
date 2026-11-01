@@ -355,36 +355,66 @@ def test_tokenize_unterminated_quote_raises(expr):
 
 
 # --------------------------------------------------------------------------- #
-# 8. Through the Python API a string dependency is rejected when the option is
-#    added, not later when it is first evaluated (see also
-#    test_core.test_python_api_string_dependency_is_rejected).
+# 8. A string dependency works the same through the Python API and the schema.
+#    It compiles when the option is created and names resolve when it is
+#    evaluated, so options can be added in any order.
 # --------------------------------------------------------------------------- #
 
-def test_add_options_rejects_string_dependency():
+def test_string_dependency_may_name_an_option_added_later():
     core = Core()
-    with pytest.raises(ValueError):
-        core.add_options(ConfigOption("N", 1, dependencies="F"))
+    core.add_options(ConfigOption("N", 1, dependencies="F"))
+    core.add_options(ConfigOption("F", False))
+    assert core.N is None
+    core.get_option("F").value = True
+    assert core.N == 1
 
 
-def test_add_options_rejects_string_dependency_in_group_child():
+def test_string_dependency_with_unknown_name_fails_when_read():
     core = Core()
-    child = ConfigOption("N", 1, dependencies="F")
+    core.add_options(ConfigOption("N", 1, dependencies="F"))
+    with pytest.raises(ValueError, match="Invalid token: F"):
+        core.N
+
+
+def test_string_dependency_with_bad_syntax_fails_on_creation():
     with pytest.raises(ValueError):
-        core.add_options(ConfigOption(
-            "G", option_type=ConfigOptionType.GROUP, options=[child]))
-    assert core.get_option("G") is None
+        ConfigOption("N", 1, dependencies="(F")
 
 
-def test_action_option_rejects_string_dependency():
+def test_dependency_of_the_wrong_type_is_rejected():
+    with pytest.raises(ValueError, match="N"):
+        ConfigOption("N", 1, dependencies=5)
+
+
+def test_string_dependency_in_group_child():
+    core = Core()
+    core.add_options(
+        ConfigOption("F", False),
+        ConfigOption("G", option_type=ConfigOptionType.GROUP, options=[
+            ConfigOption("N", 1, dependencies="F")]))
+    assert core.N is None
+
+
+def test_string_dependency_on_action_option():
     cfg = pyconfix()
-    with pytest.raises(ValueError):
-        @cfg.action_option(dependencies="F")
-        def act(x):
-            return 1
+    cfg.add_options(ConfigOption("F", False))
+
+    @cfg.action_option(dependencies="F")
+    def act(x):
+        return 1
+
+    assert cfg.act() == (None, [])
+
+
+def test_string_dependency_with_enum_choice_token():
+    core = Core()
+    core.add_options(
+        ConfigOption("MODE", "DEBUG", choices=["DEBUG", "INFO"]),
+        ConfigOption("N", 1, dependencies="MODE == DEBUG"))
+    assert core.N == 1
 
 
 def test_schema_string_dependencies_still_allowed(chain):
-    # The JSON schema compiles its strings before adding, so it is unaffected.
     assert chain(MASTER=True).A is True
 
 

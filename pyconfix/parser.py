@@ -207,7 +207,6 @@ class BooleanExpressionParser:
         - operand_func: a function that returns the value for a given token,
         - eval_operator: a function that applies an operator.
         """
-        self.getter = getter
         stack = []
         for token in tokens:
             if token == 'true':
@@ -228,7 +227,7 @@ class BooleanExpressionParser:
                 if token.startswith("'") and token.endswith("'"):
                     stack.append(token[1:-1])
                 else:
-                    stack.append(self.getter(token))
+                    stack.append(getter(token))
             else:
                 if token in ('!', 'u-'):
                     if not stack:

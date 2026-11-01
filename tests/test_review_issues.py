@@ -372,7 +372,7 @@ def test_string_dependency_may_name_an_option_added_later():
 def test_string_dependency_with_unknown_name_fails_when_read():
     core = Core()
     core.add_options(ConfigOption("N", 1, dependencies="F"))
-    with pytest.raises(ValueError, match="Invalid token: F"):
+    with pytest.raises(AttributeError, match="Invalid key: 'F'"):
         core.N
 
 

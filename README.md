@@ -430,6 +430,26 @@ def clean(x):
     return True
 ```
 
+A function or lambda works as a task too. It receives the [session](#the-session) as `x`:
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+def build(x):
+    print(f"Building for {x.TARGET}")
+    return True
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("TARGET", choices=["linux", "windows"]),
+    ConfigOption("BUILD", build),
+    ConfigOption("HELLO", lambda x: print("Hello")),
+)
+
+config.BUILD()
+config.HELLO()
+```
+
 ## Running other tasks
 
 Use `needs` to run other tasks first. Add `()` to run a task.

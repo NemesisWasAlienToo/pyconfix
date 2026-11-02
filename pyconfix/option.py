@@ -6,6 +6,7 @@
 # THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 from enum import StrEnum
+from functools import partial
 from .parser import *
 
 class ConfigOptionType(StrEnum):
@@ -25,7 +26,7 @@ class ConfigOption:
     }
 
     def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
-                 dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False):
+                 dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False, **params):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
 
@@ -71,6 +72,17 @@ class ConfigOption:
         if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and needs:
             raise ValueError(f"The 'needs' parameter is only valid for action and group options, not {option_type} options")
         
+        if params and option_type != ConfigOptionType.ACTION:
+            raise ValueError(f"Extra fields are only valid for action options, not {name}: {list(params)}")
+
+        for param in params:
+            if not isinstance(param, str) or not param.isidentifier():
+                raise ValueError(f"Invalid parameter name '{param}' in option {name}")
+
+        # An action's body receives its params as keyword arguments, after the session.
+        if params:
+            default = partial(default, **params)
+
         if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
             raise ValueError(f"Group option {name} must have a list of options")
 
@@ -156,7 +168,7 @@ class ConfigOption:
     def clone_with(self, **kwargs):
         """
         This method creates a copy of the current instance and updates its attributes with the values 
-        specified in the keyword arguments.
+        specified in the keyword arguments. Any other keyword is a param, as in the constructor.
         """
         params = {
             'name': self.name,

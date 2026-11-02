@@ -1,5 +1,5 @@
-import time, argparse, sys, os
-from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema
+import time, argparse, sys, os, shutil
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema, shell_action
 from database_module import create_database_module
 import platform
 
@@ -27,10 +27,29 @@ def create_config():
         choices=["INTEGRATED", "MODULE", "DISABLED"]
     )
 
+    ### Action aliases are reusable actions. Any extra keyword on an option using one
+    ### is an argument, which a shell script reads as an environment variable.
+    config.register_alias(
+        name='debian-container',
+        option_type=ConfigOptionType.ACTION,
+        default=shell_action('docker run --rm -e script debian:stable-slim sh -c "$script"')
+    )
+
     ### Config options can be added using helpers or plain ConfigOption objects
     config.add_options(
         config.option_from_alias('tri-state', name='NEW_MODULE_TRI_STATE_FROM_PYTHON'),
         config.option_from_alias('string', name='STRING_FROM_ALIAS', default='Default string value'),
+        ConfigOption(
+            name='HAS_DOCKER',
+            option_type=ConfigOptionType.EXTERNAL,
+            default=shutil.which('docker') is not None
+        ),
+        config.option_from_alias(
+            'debian-container',
+            name='PYTHON_DEBIAN',
+            dependencies=lambda x: x.HAS_DOCKER,
+            script='echo "Hello from $(head -1 /etc/os-release)"; sleep 2'
+        ),
         ### The type is deduced from the value, so name + default is enough.
         ConfigOption('MAX_THREADS', 4),
         ConfigOption(

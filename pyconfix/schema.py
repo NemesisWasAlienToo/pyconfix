@@ -76,7 +76,8 @@ _FIELD_ALIASES = {
 # used as option names, since a name and a field share the same dict namespace.
 _RESERVED_NAMES = (
     {"type", "default", "choices", "description", "data",
-     "dependencies", "needs", "options", "include", "do_not_cache"}
+     "dependencies", "needs", "options", "include", "do_not_cache",
+     "aliases"}
     | set(_FIELD_ALIASES)
 )
 
@@ -97,8 +98,21 @@ def _normalize_fields(name, option_data):
 
 
 def shell_action(script):
-    """An action body that runs ``script`` in a shell. True if it exits with 0."""
-    return lambda x: subprocess.run(script, shell=True).returncode == 0
+    """An action body that runs ``script`` in a shell. True if it exits with 0.
+
+    Arguments reach the script as environment variables, so a value is never
+    pasted into the script and needs no quoting: read it as ``"$name"``.
+    """
+    def run(x, **args):
+        env = {**os.environ, **{name: str(value) for name, value in args.items()}}
+        return subprocess.run(script, shell=True, env=env).returncode == 0
+    return run
+
+
+def _script_succeeds(script):
+    """Whether ``script`` exits with 0. This runs while the schema loads."""
+    return subprocess.run(script, shell=True, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
 
 
 def parse_options(core, options_data, base_path=None):
@@ -112,8 +126,17 @@ def parse_options(core, options_data, base_path=None):
     """
     if base_path is None:
         base_path = os.getcwd()
+    # Before the options, so an option can use an alias defined below it.
+    aliases = options_data.get('aliases', {})
+    if not isinstance(aliases, dict):
+        raise ValueError("'aliases' must be a mapping of alias names")
+    for alias_name, alias_data in aliases.items():
+        core._register_alias(_parse_option(core, alias_name, alias_data, base_path, is_alias=True))
+
     parsed_options = []
     for key, value in options_data.items():
+        if key == 'aliases':
+            continue
         if key == 'include':
             for include_file in value:
                 include_path = os.path.join(base_path, include_file)
@@ -129,7 +152,7 @@ def parse_options(core, options_data, base_path=None):
         parsed_options.append(_parse_option(core, key, value, base_path))
     return parsed_options
 
-def _parse_option(core, name, option_data, base_path=None):
+def _parse_option(core, name, option_data, base_path=None, is_alias=False):
     if not isinstance(option_data, dict):
         if isinstance(option_data, list):
             option_data = {'choices': option_data}
@@ -157,19 +180,26 @@ def _parse_option(core, name, option_data, base_path=None):
         option_type_name = ConfigOptionType.GROUP
         option_data = {'options': option_data}
 
+    extra_fields = {key: value for key, value in option_data.items() if key not in _RESERVED_NAMES}
+
     default = option_data.get('default', def_value)
     if option_type_name == ConfigOptionType.ACTION and isinstance(default, str):
         default = shell_action(default)
+    if option_type_name == ConfigOptionType.EXTERNAL and isinstance(default, str):
+        default = _script_succeeds(default)
 
     if option_type_name in core.aliases:
         custom_type = core.aliases[option_type_name]
-        option = custom_type.clone_with(
+        option = core.option_from_alias(
+            option_type_name,
             name=name,
             default=option_data.get('default', custom_type.default),
             description=option_data.get('description', custom_type.description),
             data=option_data.get('data', custom_type.data),
             do_not_cache=option_data.get('do_not_cache', custom_type.do_not_cache),
             dependencies=option_data.get('dependencies', custom_type.dependencies),
+            needs=option_data.get('needs', custom_type.needs),
+            **extra_fields,
         )
     else:
         option = ConfigOption(
@@ -182,6 +212,7 @@ def _parse_option(core, name, option_data, base_path=None):
             needs=option_data.get('needs', ""),
             do_not_cache=option_data.get('do_not_cache', False),
             choices=option_data.get('choices', []),
+            **(extra_fields if is_alias else {}),
             options=[]
         )
     if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:

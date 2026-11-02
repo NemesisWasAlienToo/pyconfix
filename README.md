@@ -418,7 +418,7 @@ Use the explicit form when the group itself needs metadata such as
 
 ### Aliases
 
-You can register alias types (currently **ENUM** only) and reuse them in both JSON schema files and the Python API. This is useful for reusing common choice sets like tri-state options.
+You can register **ENUM** and **ACTION** alias types and reuse them in schema files and the Python API. This is useful for reusing common choice sets like tri-state options, or a command that several actions share.
 
 - Python usage: register the alias before loading the schema (or before `run()`), then create options from it:
 ```python
@@ -429,7 +429,44 @@ cfg.register_alias(
 )
 ```
 
-> **Note:** Registering aliases is currently only available through the python API and only enum aliases are supported for now.
+Any extra field on an action alias is an argument. Values set on the alias are
+defaults, and each option using it can add or override them. A script reads them
+as environment variables, exactly as named, so values need no quoting.
+
+```yaml
+Main:
+  aliases:
+    docker:
+      type: action
+      image: debian:stable-slim
+      default: docker run --rm -e script "$image" sh -c "$script"
+
+  HELLO:
+    type: docker
+    script: echo "Hello from Debian"
+```
+
+In a schema, the string `default` of an `external` option is a script, as it is
+for an `action`. The value is `true` if the script exits with 0. It runs while the
+schema loads, which suits a check like this one:
+
+```yaml
+HAS_DOCKER:
+  type: external
+  default: command -v docker
+```
+
+The same through the Python API. `shell_action` turns a script into an action
+body, and a plain function works too: it gets the arguments as keywords.
+
+```python
+cfg.register_alias(
+    name='docker',
+    option_type=ConfigOptionType.ACTION,
+    default=shell_action('docker run --rm -e script debian:stable-slim sh -c "$script"')
+)
+cfg.add_options(cfg.option_from_alias('docker', name='HELLO', script='echo hi'))
+```
 
 ### Dependency syntax – cheatsheet
 

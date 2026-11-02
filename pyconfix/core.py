@@ -117,8 +117,8 @@ class Core:
 
     def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
         """Register an alias and guard against accidental duplicates."""
-        if alias_option.option_type != ConfigOptionType.ENUM:
-            raise ValueError("Only ENUM aliases are supported for now")
+        if alias_option.option_type not in (ConfigOptionType.ENUM, ConfigOptionType.ACTION):
+            raise ValueError("Only ENUM and ACTION aliases are supported for now")
         if alias_option.name in list(ConfigOptionType):
             raise ValueError(f"Alias '{alias_option.name}' has the name of a built-in type")
 
@@ -131,14 +131,18 @@ class Core:
         self.aliases[alias_option.name] = alias_option
         return alias_option
 
-    def register_alias(self, name, option_type, choices):
+    def register_alias(self, name, option_type, choices=None, default=None, **params):
         """
-        Register an alias type that can be reused when defining options. Currently only ENUM aliases are supported.
+        Register an alias type that can be reused when defining options. ENUM aliases
+        take ``choices``. ACTION aliases take a ``default`` body, and any other keyword
+        is a default value for an argument of that body.
         """
         alias_option = ConfigOption(
             name=name,
             option_type=option_type,
             choices=choices,
+            default=default,
+            **params,
         )
         return self._register_alias(alias_option)
 

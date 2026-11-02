@@ -34,7 +34,7 @@ RICH_SCHEMA = {
         "NUM": {"type": "int", "default": 5},
         "TXT": {"type": "string", "default": "hi"},
         "LEVEL": {"type": "enum", "default": "A", "choices": ["A", "B", "C"]},
-        "EXT_INFO": {"type": "external", "default": "x"},
+        "EXT_INFO": {"type": "external", "default": 7},
         "GRP": {"CHILD": True},
     }
 }

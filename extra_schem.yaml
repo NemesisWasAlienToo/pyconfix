@@ -1,5 +1,13 @@
 YAML Config:
+  aliases:
+    docker:
+      type: action
+      image: debian:stable-slim
+      default: docker run --rm -e script "$image" sh -c "$script"
   YAML_ENABLED: true
+  YAML_DOCKER_AVAILABLE:
+    type: external
+    default: command -v docker
   YAML_THREADS:
     default: 4
     deps: YAML_ENABLED
@@ -28,4 +36,11 @@ YAML Config:
     needs: YAML_HELLO() && YAML_BUILD()
     default: |
       echo "Deploying..."
+      sleep 2
+  YAML_DEBIAN:
+    type: docker
+    deps: YAML_ENABLED && YAML_DOCKER_AVAILABLE
+    script: |
+      set -e
+      echo "Hello from $(head -1 /etc/os-release)"
       sleep 2

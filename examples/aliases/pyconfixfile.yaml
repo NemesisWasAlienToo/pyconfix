@@ -1,0 +1,15 @@
+# Try: pyconfix --run GOODBYE
+Aliases:
+  # Include first, so the options below can use the aliases.
+  include: [aliases.yaml]
+
+  USB_DRIVER:
+    type: tri-state
+    default: MODULE
+
+  GREET:
+    type: say
+
+  GOODBYE:
+    type: say
+    text: Goodbye

@@ -1016,10 +1016,18 @@ def read(path):
 
 ## Examples
 
-* __minimal_example.py__: the smallest runner
-* __minimal_yaml_example.py__: the same with a YAML schema
-* __extra_schem.yaml__: tasks, aliases and checks in YAML
-* __example.py__: everything together
+The [examples](examples) folder has one runnable example per feature:
+
+* [minimal](examples/minimal): the smallest setup
+* [options](examples/options): every kind of setting
+* [dependencies](examples/dependencies): options that depend on others
+* [tasks](examples/tasks): shell tasks that run other tasks
+* [aliases](examples/aliases): reusable enums and tasks
+* [checks](examples/checks): checks that run at load
+* [include](examples/include): splitting a config across files
+* [python](examples/python): everything from Python
+* [export](examples/export): saving as a C header
+* [everything](examples/everything): all features together
 
 ## Roadmap
 

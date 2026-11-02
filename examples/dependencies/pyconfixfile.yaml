@@ -1,0 +1,27 @@
+# Turn options on and off based on other options.
+# Change these in the menu and watch the others appear.
+Dependencies:
+  ENABLE_LOGGING: true
+  LOG_LEVEL:
+    default: INFO
+    choices: [DEBUG, INFO, ERROR]
+    deps: ENABLE_LOGGING
+
+  # Enum choices can be compared by name.
+  LOG_FILE:
+    default: debug.log
+    deps: ENABLE_LOGGING && LOG_LEVEL == DEBUG
+
+  THREADS: 4
+  # Math and comparisons work too.
+  USE_THREAD_POOL:
+    default: false
+    deps: THREADS > 1
+
+  # A group's deps apply to everything inside it.
+  Logging:
+    type: group
+    deps: ENABLE_LOGGING
+    options:
+      ROTATE: true
+      MAX_FILES: 5

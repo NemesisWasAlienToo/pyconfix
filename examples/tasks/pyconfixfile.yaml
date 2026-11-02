@@ -1,0 +1,25 @@
+# Tasks are shell scripts. Try:
+#   pyconfix --run DEPLOY
+#   pyconfix --run DEPLOY -o RELEASE=true
+Tasks:
+  RELEASE: false
+
+  BUILD:
+    type: action
+    desc: Compiles the project
+    default: |
+      set -e
+      echo "Building..."
+      echo "Build done"
+
+  TEST:
+    type: action
+    needs: BUILD()
+    default: echo "Testing..."
+
+  # deps: available only for a release. needs: runs TEST first.
+  DEPLOY:
+    type: action
+    deps: RELEASE
+    needs: TEST()
+    default: echo "Deploying..."

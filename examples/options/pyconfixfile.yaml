@@ -1,0 +1,16 @@
+# Every kind of setting. The type comes from the value.
+Options:
+  ENABLED: true
+  PORT: 8080
+  HOST: localhost
+  LOG_LEVEL: [DEBUG, INFO, ERROR]
+
+  # The full form gives an option more fields.
+  TIMEOUT:
+    default: 30
+    desc: Seconds to wait for a reply
+
+  # Options inside a mapping make a group.
+  Network:
+    PROXY: false
+    RETRIES: 3

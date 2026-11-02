@@ -1,0 +1,5 @@
+Minimal YAML:
+  ENABLE_FEATURE_A: true
+  DISABLED_BY_DEFAULT:
+    default: false
+    deps: ENABLE_FEATURE_A

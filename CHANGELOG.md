@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 ### Added
-- config.include also imports aliases
+- Empty
 
 ### Changed
 - Empty
@@ -24,6 +24,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Security
 - Empty
+
+---
+
+## [2.1.0]
+### Added
+- config.include also imports aliases
+- Examples folder with one example per feature
+
+### Changed
+- example.py moved to examples/everything
+- The minimal examples moved to examples/minimal
 
 ---
 

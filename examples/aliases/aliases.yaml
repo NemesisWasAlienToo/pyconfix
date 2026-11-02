@@ -1,0 +1,11 @@
+# Aliases can live in their own file. The top entry is ignored.
+Shared Aliases:
+  aliases:
+    tri-state:
+      choices: [INTEGRATED, MODULE, DISABLED]
+
+    # Extra fields are arguments. A script reads them as environment variables.
+    say:
+      type: action
+      text: Hello
+      default: echo "$text"

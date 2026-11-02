@@ -1,0 +1,11 @@
+# Split a config across files. YAML and JSON can include each other.
+Include:
+  ENABLED: true
+
+  # An include inside a group adds to that group.
+  Network:
+    HOST: localhost
+    include: [network.yaml]
+
+  # An include here adds at the top level.
+  include: [extras.json]

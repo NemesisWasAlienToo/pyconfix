@@ -1,0 +1,16 @@
+# External options run a script when the schema loads.
+# Their value is true if the script exits with 0.
+Checks:
+  HAS_GIT:
+    type: external
+    default: command -v git
+
+  HAS_DOCKER:
+    type: external
+    default: command -v docker
+
+  # Only available if git is installed.
+  SHOW_COMMIT:
+    type: action
+    deps: HAS_GIT
+    default: git log -1 --oneline

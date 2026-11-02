@@ -1,4 +1,4 @@
 from pyconfix import pyconfix
 
 if __name__ == "__main__":
-    pyconfix().load_schema(["extra_schem.yaml"]).apply_config().run()
+    pyconfix().load_schema(["schema.yaml"]).apply_config().run()

@@ -1,0 +1,3 @@
+Export:
+  MAX_USERS: 100
+  TIMEOUT: 30

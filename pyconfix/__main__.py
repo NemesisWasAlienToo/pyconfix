@@ -6,10 +6,10 @@ from .runner import pyconfix
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
     parser.add_argument(
-        "schem_files",
+        "schema_files",
         metavar="FILE",
         nargs="*",
-        help="Schem file(s). Can provide multiple files; defaults to pyconfixfile.json, then pyconfixfile.yaml"
+        help="Schema file(s). Can provide multiple files; defaults to pyconfixfile.json, then pyconfixfile.yaml"
     )
     parser.add_argument(
         "-l", "--load",
@@ -99,7 +99,7 @@ def main():
 
     # 1. Build the config and load the schema explicitly.
     config = pyconfix()
-    config.load_schem(schem_files=args.schem_files or None)
+    config.load_schema(schema_files=args.schema_files or None)
 
     # 2. Apply saved selections: the cached output file (if present), then any
     #    -l files and -o key=value overrides.

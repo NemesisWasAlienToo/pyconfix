@@ -3,7 +3,7 @@
 These drive the public ``pyconfix`` runner through the full pipeline (schema
 load -> dependency compile -> config apply -> dump/diff/get/actions) headless,
 i.e. without launching the curses TUI (``run()``). Loading and applying are now
-explicit steps (``load_schem`` / ``apply_config``); the TUI is only started by
+explicit steps (``load_schema`` / ``apply_config``); the TUI is only started by
 ``run()``. They are the integration safety net; per-module behavior is covered in
 test_core / test_separation / test_parser / test_option.
 """
@@ -85,7 +85,7 @@ def make_config(tmp_path, monkeypatch):
                 return x.build() + 1
 
         # Loading and applying are explicit, separate steps now.
-        cfg.load_schem(["main.json"])
+        cfg.load_schema(["main.json"])
         cfg.apply_config(config_files=config_files or [], overlay=overlay)
         return cfg
 
@@ -134,7 +134,7 @@ def test_too_many_top_level_keys_is_rejected(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
     with pytest.raises(ValueError):
-        cfg.load_schem(["bad.json"])
+        cfg.load_schema(["bad.json"])
 
 
 # --------------------------------------------------------------------------- #

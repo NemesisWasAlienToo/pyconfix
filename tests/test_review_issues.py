@@ -44,7 +44,7 @@ CHAIN_SCHEMA = {"Chain": {
 @pytest.fixture
 def chain(tmp_path, monkeypatch):
     name = write_schema(tmp_path, monkeypatch, CHAIN_SCHEMA)
-    return lambda **overlay: pyconfix().load_schem([name]).apply_config(overlay=overlay)
+    return lambda **overlay: pyconfix().load_schema([name]).apply_config(overlay=overlay)
 
 
 def test_dependent_of_disabled_option_is_disabled(chain):
@@ -80,7 +80,7 @@ def test_diff_omits_transitively_disabled_options(chain):
 ])
 def test_schema_dependency_cycle_raises_named_value_error(tmp_path, monkeypatch, schema, cycle):
     name = write_schema(tmp_path, monkeypatch, {"S": schema})
-    cfg = pyconfix().load_schem([name])
+    cfg = pyconfix().load_schema([name])
     with pytest.raises(ValueError, match=cycle):
         cfg.A
 
@@ -100,7 +100,7 @@ def test_dump_reports_dependency_cycle(tmp_path, monkeypatch):
         "A": {"default": True, "deps": "B"},
         "B": {"default": True, "deps": "A"}}})
     with pytest.raises(ValueError, match="cycle"):
-        pyconfix().load_schem([name]).dump()
+        pyconfix().load_schema([name]).dump()
 
 
 def test_failed_cycle_check_does_not_poison_later_lookups(tmp_path, monkeypatch):
@@ -111,7 +111,7 @@ def test_failed_cycle_check_does_not_poison_later_lookups(tmp_path, monkeypatch)
         "B": {"default": True, "deps": "A"},
         "ON": True,
         "D": {"default": 4, "deps": "ON"}}})
-    cfg = pyconfix().load_schem([name])
+    cfg = pyconfix().load_schema([name])
     with pytest.raises(ValueError):
         cfg.A
     assert cfg.D == 4
@@ -406,7 +406,7 @@ def test_included_group_dependency_cascades(tmp_path, monkeypatch):
 
 
 def test_group_dependency_cascade_is_not_reapplied_on_second_load(tmp_path, monkeypatch):
-    # Each load_schem re-ran the cascade over every option, wrapping already
+    # Each load_schema re-ran the cascade over every option, wrapping already
     # combined predicates again. A child's predicate must not grow per load.
     (tmp_path / "a.json").write_text(json.dumps({"A": {"ONE": 1}}))
     (tmp_path / "b.json").write_text(json.dumps({"B": {"TWO": 2}}))
@@ -415,8 +415,8 @@ def test_group_dependency_cascade_is_not_reapplied_on_second_load(tmp_path, monk
     cfg = pyconfix()
     group = cfg.group_option("G", dependencies=lambda x: calls.append(1) or True)
     group.add_options(ConfigOption("K", 1))
-    cfg.load_schem(["a.json"])
-    cfg.load_schem(["b.json"])
+    cfg.load_schema(["a.json"])
+    cfg.load_schema(["b.json"])
     calls.clear()
     assert cfg.K == 1
     assert len(calls) == 1
@@ -433,7 +433,7 @@ TYPED_SCHEMA = {"T": {"FLAG": False, "COUNT": 3, "NAME": "x"}}
 @pytest.fixture
 def typed(tmp_path, monkeypatch):
     name = write_schema(tmp_path, monkeypatch, TYPED_SCHEMA)
-    return lambda: pyconfix().load_schem([name])
+    return lambda: pyconfix().load_schema([name])
 
 
 @pytest.mark.parametrize("key,value", [
@@ -494,7 +494,7 @@ def test_alias_typed_option_keeps_schema_data(tmp_path, monkeypatch):
         "TRI": {"type": "tri-state", "data": ["WIN32"]}}})
     cfg = pyconfix()
     cfg.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "MODULE", "OFF"])
-    cfg.load_schem([name])
+    cfg.load_schema([name])
     assert cfg.get_option("TRI").data == ["WIN32"]
 
 
@@ -506,7 +506,7 @@ def test_alias_typed_option_keeps_schema_data(tmp_path, monkeypatch):
 def test_included_schema_dependency_resolves_in_destination(tmp_path, monkeypatch):
     name = write_schema(tmp_path, monkeypatch, {"S": {
         "FEATURE": {"default": 7, "deps": "HOST_ON"}}})
-    other = pyconfix().load_schem([name])
+    other = pyconfix().load_schema([name])
 
     cfg = pyconfix()
     cfg.add_options(ConfigOption("HOST_ON", True))
@@ -643,7 +643,7 @@ def test_do_not_cache_from_schema(tmp_path, monkeypatch):
         "ON": {"default": True, "do_not_cache": True},
         "OFF": True,
     }})
-    cfg = pyconfix().load_schem([name])
+    cfg = pyconfix().load_schema([name])
     assert cfg.get_option("ON").do_not_cache is True
     assert cfg.get_option("OFF").do_not_cache is False
 
@@ -651,7 +651,7 @@ def test_do_not_cache_from_schema(tmp_path, monkeypatch):
 def test_do_not_cache_is_reserved_in_schema(tmp_path, monkeypatch):
     name = write_schema(tmp_path, monkeypatch, {"S": {"do_not_cache": True}})
     with pytest.raises(ValueError, match="reserved"):
-        pyconfix().load_schem([name])
+        pyconfix().load_schema([name])
 
 
 def test_do_not_cache_on_alias_typed_option(tmp_path, monkeypatch):
@@ -659,7 +659,7 @@ def test_do_not_cache_on_alias_typed_option(tmp_path, monkeypatch):
         "TRI": {"type": "tri-state", "do_not_cache": True}}})
     cfg = pyconfix()
     cfg.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "OFF"])
-    cfg.load_schem([name])
+    cfg.load_schema([name])
     assert cfg.get_option("TRI").do_not_cache is True
 
 
@@ -787,6 +787,6 @@ def test_option_depending_on_math_over_disabled_option_is_disabled(tmp_path, mon
         "COUNT": {"default": 10, "deps": "MASTER"},
         "SMALL": {"default": True, "deps": "COUNT ** 2 < 10"},
     }})
-    cfg = pyconfix().load_schem([name])
+    cfg = pyconfix().load_schema([name])
     assert cfg.SMALL is None
     assert cfg.dump()["SMALL"] is None

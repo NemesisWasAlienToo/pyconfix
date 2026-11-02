@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [2.0.0]
 ### Breaking changes
+- load_schem is now load_schema, and schem_files is now schema_files
 - Enums hold the choice name instead of the index
 - Setting a value or default of the wrong type raises an error
 - Saved config files with wrong types raise an error
@@ -44,7 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - YAML schemas with pip install pyconfix[yaml]
 - JSON and YAML files can include each other
 - find_schema looks for JSON first, then YAML
-- load_schem([]) loads nothing
+- load_schema([]) loads nothing
 - Actions can run shell scripts
 - Externals can run a shell script at load
 - Action aliases

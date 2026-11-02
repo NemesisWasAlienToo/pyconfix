@@ -37,7 +37,7 @@ def load(tmp_path, monkeypatch):
 
     def _load(text, name="schema.yaml"):
         (tmp_path / name).write_text(text)
-        return pyconfix().load_schem([name])
+        return pyconfix().load_schema([name])
     return _load
 
 
@@ -54,7 +54,7 @@ def test_yaml_and_json_schemas_build_the_same_options(load, tmp_path):
     from_yaml = load("Main:\n  N: 1\n  F:\n    default: true\n    deps: N > 0\n")
     (tmp_path / "schema.json").write_text(json.dumps(
         {"Main": {"N": 1, "F": {"default": True, "deps": "N > 0"}}}))
-    from_json = pyconfix().load_schem(["schema.json"])
+    from_json = pyconfix().load_schema(["schema.json"])
     assert from_yaml.dump() == from_json.dump()
 
 
@@ -133,7 +133,7 @@ def test_json_only_use_never_imports_yaml(tmp_path):
     (tmp_path / "schema.json").write_text(json.dumps({"S": {"N": 1}}))
     code = (
         "import sys; from pyconfix import pyconfix; "
-        "c = pyconfix().load_schem(['schema.json']); "
+        "c = pyconfix().load_schema(['schema.json']); "
         "print(c.N, 'yaml' in sys.modules)"
     )
     out = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True,
@@ -201,26 +201,26 @@ def test_load_schem_finds_yaml_by_default(tmp_path, monkeypatch):
     pytest.importorskip("yaml")
     (tmp_path / "pyconfixfile.yml").write_text("Main:\n  N: 1\n")
     monkeypatch.chdir(tmp_path)
-    assert pyconfix().load_schem().N == 1
+    assert pyconfix().load_schema().N == 1
 
 
 def test_load_schem_prefers_json_by_default(tmp_path, monkeypatch):
     (tmp_path / "pyconfixfile.yaml").write_text("Main:\n  N: 1\n")
     (tmp_path / "pyconfixfile.json").write_text(json.dumps({"Main": {"N": 2}}))
     monkeypatch.chdir(tmp_path)
-    assert pyconfix().load_schem().N == 2
+    assert pyconfix().load_schema().N == 2
 
 
 def test_load_schem_with_empty_list_loads_nothing(tmp_path, monkeypatch):
     (tmp_path / "pyconfixfile.json").write_text(json.dumps({"Main": {"N": 2}}))
     monkeypatch.chdir(tmp_path)
-    assert pyconfix().load_schem([]).options == []
+    assert pyconfix().load_schema([]).options == []
 
 
 def test_explicit_missing_schema_names_that_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError, match="other.yaml"):
-        pyconfix().load_schem(["other.yaml"])
+        pyconfix().load_schema(["other.yaml"])
 
 
 def hide_pyyaml(monkeypatch):
@@ -233,7 +233,7 @@ def test_missing_schema_message_offers_yaml_when_installed(tmp_path, monkeypatch
     pytest.importorskip("yaml")
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError) as e:
-        pyconfix().load_schem()
+        pyconfix().load_schema()
     assert str(e.value) == (
         "No schema file found, looked for: "
         "pyconfixfile.json, pyconfixfile.yaml, pyconfixfile.yml")
@@ -243,7 +243,7 @@ def test_missing_schema_message_hides_yaml_when_not_installed(tmp_path, monkeypa
     hide_pyyaml(monkeypatch)
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError) as e:
-        pyconfix().load_schem()
+        pyconfix().load_schema()
     assert str(e.value) == "No schema file found, looked for: pyconfixfile.json"
 
 

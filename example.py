@@ -111,7 +111,7 @@ def create_config():
     database_group = config.group_option("database").get()
     config.include(create_database_module(), parent=database_group)
 
-    config.load_schem(schem_files=[find_schema("schem")])
+    config.load_schema(schema_files=[find_schema("schem")])
     return config
 
 def parse_args():

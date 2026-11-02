@@ -51,7 +51,7 @@ def curses_stubbed(stub_curses):
 def cfg(tmp_path, monkeypatch):
     (tmp_path / "schema.json").write_text(json.dumps(SCHEMA))
     monkeypatch.chdir(tmp_path)
-    return pyconfix().load_schem(["schema.json"])
+    return pyconfix().load_schema(["schema.json"])
 
 
 @pytest.fixture
@@ -249,7 +249,7 @@ def reloaded(cfg, tmp_path):
     """A fresh config loaded from a file saved with FEATURE off."""
     out = tmp_path / "saved.json"
     play(cfg, [TOGGLE, Tui.save_key, ord(" ")], output=str(out))
-    fresh = pyconfix().load_schem(["schema.json"])
+    fresh = pyconfix().load_schema(["schema.json"])
     fresh.apply_config(config_files=[str(out)])
     return fresh
 

@@ -26,7 +26,7 @@ def load(tmp_path, monkeypatch):
 
     def _load(data):
         (tmp_path / "schema.json").write_text(json.dumps({"Main": data}))
-        return pyconfix().load_schem(["schema.json"])
+        return pyconfix().load_schema(["schema.json"])
     return _load
 
 
@@ -241,7 +241,7 @@ def test_python_alias_is_usable_from_a_schema(tmp_path, monkeypatch):
         {"Main": {"SUM": {"type": "add", "a": 2}}}))
     cfg = pyconfix()
     cfg.register_alias("add", ACTION, default=lambda x, a: a + 1)
-    cfg.load_schem(["schema.json"])
+    cfg.load_schema(["schema.json"])
     assert cfg.SUM()[0] == 3
 
 

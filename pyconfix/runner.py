@@ -40,14 +40,14 @@ class pyconfix:
         """The underlying option manager."""
         return self._core
 
-    def load_schem(self, schem_files=None):
+    def load_schema(self, schema_files=None):
         """Read and import schema files into the core option tree.
 
-        Without ``schem_files``, loads ``pyconfixfile`` in the first format found.
+        Without ``schema_files``, loads ``pyconfixfile`` in the first format found.
         """
-        if schem_files is None:
-            schem_files = [schema.find_schema("pyconfixfile")]
-        schema.load_schema(self._core, schem_files)
+        if schema_files is None:
+            schema_files = [schema.find_schema("pyconfixfile")]
+        schema.load_schema(self._core, schema_files)
         return self
 
     def apply_config(self, config_files=None, overlay=None):

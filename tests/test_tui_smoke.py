@@ -114,7 +114,7 @@ def app(tmp_path, monkeypatch):
     (tmp_path / "smoke.json").write_text(json.dumps(SCHEMA))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["smoke.json"])
+    cfg.load_schema(["smoke.json"])
     return cfg
 
 
@@ -123,7 +123,7 @@ def rich(tmp_path, monkeypatch):
     (tmp_path / "rich.json").write_text(json.dumps(RICH_SCHEMA))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["rich.json"])
+    cfg.load_schema(["rich.json"])
     return cfg
 
 
@@ -173,7 +173,7 @@ def test_run_save_func_receives_config_data(tmp_path, monkeypatch, stub_curses):
         recorded["data"] = dict(config_data)
 
     cfg = pyconfix()
-    cfg.load_schem(["smoke.json"])
+    cfg.load_schema(["smoke.json"])
     out = str(tmp_path / "out.json")
 
     # Drive the real runner graphical path: save (full dump), dismiss, then quit.
@@ -232,7 +232,7 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
     }))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["s.json"])
+    cfg.load_schema(["s.json"])
     cfg.get_option("FLAG").value = False        # disables DEP (depends on FLAG)
 
     hidden = Tui(cfg,"out.json")._flatten_options(cfg.options)
@@ -334,7 +334,7 @@ def test_menu_action_enter_executes(tmp_path, monkeypatch, stub_curses):
     (tmp_path / "rich.json").write_text(json.dumps({"A": {"FLAG": True}}))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["rich.json"])
+    cfg.load_schema(["rich.json"])
     ran = []
     cfg.add_options(ConfigOption(name="build", option_type=ConfigOptionType.ACTION,
                                  default=lambda x: ran.append(True)))
@@ -386,7 +386,7 @@ def available(tui, cfg):
 def feature(tmp_path, monkeypatch):
     (tmp_path / "schema.json").write_text(json.dumps(FEATURE_SCHEMA))
     monkeypatch.chdir(tmp_path)
-    return pyconfix().load_schem(["schema.json"])
+    return pyconfix().load_schema(["schema.json"])
 
 
 def test_toggling_option_off_redraws_with_math_on_disabled_option(feature):
@@ -442,7 +442,7 @@ def test_every_operator_on_disabled_option_disables_dependent(tmp_path, monkeypa
         "DEPENDENT": {"default": True, "deps": expression},
     }}))
     monkeypatch.chdir(tmp_path)
-    cfg = pyconfix().load_schem(["schema.json"])
+    cfg = pyconfix().load_schema(["schema.json"])
     tui = Tui(cfg, "out.json")
 
     assert "DEPENDENT" in [o.name for o, _ in tui._flatten_options(cfg.options)]
@@ -459,7 +459,7 @@ def test_negated_math_on_disabled_option_enables_dependent(tmp_path, monkeypatch
         "FALLBACK": {"default": True, "deps": "!(COUNT > 1)"},
     }}))
     monkeypatch.chdir(tmp_path)
-    cfg = pyconfix().load_schem(["schema.json"])
+    cfg = pyconfix().load_schema(["schema.json"])
     tui = Tui(cfg, "out.json")
 
     assert "FALLBACK" not in [o.name for o, _ in tui._flatten_options(cfg.options)]
@@ -474,7 +474,7 @@ def test_action_and_group_gated_by_math_on_disabled_option(tmp_path, monkeypatch
         "GRP": {"type": "group", "deps": "COUNT > 1", "options": {"CHILD": True}},
     }}))
     monkeypatch.chdir(tmp_path)
-    cfg = pyconfix().load_schem(["schema.json"])
+    cfg = pyconfix().load_schema(["schema.json"])
 
     @cfg.action_option(dependencies=lambda x: x.COUNT is not None and x.COUNT > 1)
     def run_it(x):

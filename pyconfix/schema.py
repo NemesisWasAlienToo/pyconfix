@@ -34,14 +34,14 @@ def find_schema(stem):
     raise ValueError(f"No schema file found, looked for: {', '.join(names)}")
 
 
-def load_schema(core, schem_files):
+def load_schema(core, schema_files):
     """Read the schema files and load their options into ``core``.
 
     Each file is read through :mod:`serializer`, so any registered format works.
     The built options are registered on the manager via ``core.add_options``.
     """
-    for schem_file in schem_files:
-        _load_file(core, os.path.join(os.getcwd(), schem_file))
+    for schema_file in schema_files:
+        _load_file(core, os.path.join(os.getcwd(), schema_file))
 
 def _load_file(core, path):
     name, parsed = _load_file_options(core, path)

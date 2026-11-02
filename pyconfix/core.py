@@ -88,6 +88,13 @@ class EvaluationSession:
     def get_option(self, name):
         return self.config.get_option(name)
 
+    def get(self, key, default=None):
+        """Get an option's value by its name, or ``default`` for an unknown key."""
+        try:
+            return self.__getattr__(key)
+        except AttributeError:
+            return default
+
     def __getattr__(self, name):
         opt = self.config.get_option(name)
         if opt is None:

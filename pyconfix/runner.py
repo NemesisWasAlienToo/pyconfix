@@ -8,9 +8,9 @@
 """Top-level runner for pyconfix.
 
 ``pyconfix`` is the object users construct. It is the top of the dependency
-graph: it owns a :class:`~pyconfix.core.Core` and calls the serializer (files),
-core (options) and, when interactive, the TUI (curses). Nothing lower calls back
-up here.
+graph: it owns a :class:`~pyconfix.core.Core` and calls schema (schema files),
+the serializer (config files), core (options) and, when interactive, the TUI
+(curses). Nothing lower calls back up here.
 
 All option-related access (``add_options``, ``register_alias``, ``get``,
 attribute lookups, actions, ...) is forwarded to the underlying Core, so from a
@@ -20,7 +20,7 @@ logic lives in Core.
 
 from .core import Core
 from .option import ConfigOption, ConfigOptionType
-from . import serializer
+from . import schema, serializer
 
 
 class pyconfix:
@@ -42,7 +42,7 @@ class pyconfix:
 
     def load_schem(self, schem_files=["pyconfixfile.json"]):
         """Read and import schema files into the core option tree."""
-        serializer.load_schema(self._core, schem_files)
+        schema.load_schema(self._core, schem_files)
         return self
 
     def apply_config(self, config_files=None, overlay=None):

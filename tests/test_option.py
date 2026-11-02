@@ -7,7 +7,7 @@ precompilation, and clone_with / to_dict.
 import pytest
 
 from pyconfix import ConfigOption, ConfigOptionType, Core
-from pyconfix.serializer import parse_options
+from pyconfix.schema import parse_options
 
 
 # --------------------------------------------------------------------------- #

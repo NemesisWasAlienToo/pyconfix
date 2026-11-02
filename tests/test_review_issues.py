@@ -13,7 +13,7 @@ import pytest
 from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType
 from pyconfix import __main__ as cli
 from pyconfix.parser import tokenize, shunting_yard, BooleanExpressionParser
-from pyconfix.serializer import parse_options
+from pyconfix.schema import parse_options
 
 
 def write_schema(tmp_path, monkeypatch, schema, name="schema.json"):

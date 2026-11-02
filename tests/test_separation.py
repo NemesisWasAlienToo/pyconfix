@@ -12,7 +12,7 @@ import textwrap
 
 import pytest
 
-from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType, serializer
+from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType, schema, serializer
 
 
 SCHEMA = {
@@ -56,6 +56,60 @@ def test_register_custom_format(tmp_path, monkeypatch):
     assert serializer.read(str(p)) == {"READ_BY": "weird", "k": 1}
 
 
+class FakeFormat(serializer.ConfigFormat):
+    """Stands in for a new schema format: JSON on disk, its own extension."""
+    extensions = (".fake",)
+
+    def read(self, path):
+        with open(path) as f:
+            return json.load(f)
+
+
+@pytest.fixture
+def fake_format(monkeypatch):
+    # don't leak the registration into other tests
+    monkeypatch.setattr(serializer, "_FORMATS", list(serializer._FORMATS))
+    serializer.register_format(FakeFormat())
+
+
+def test_schema_loads_from_a_registered_format(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "schema.fake").write_text(json.dumps({"S": {"N": 5}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schem(["schema.fake"])
+    assert cfg.config_name == "S"
+    assert cfg.N == 5
+
+
+def test_schema_include_can_mix_formats(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "other.fake").write_text(json.dumps({"O": {"FROM_FAKE": 1}}))
+    (tmp_path / "other.json").write_text(json.dumps({"O": {"FROM_JSON": 2}}))
+    (tmp_path / "main.fake").write_text(json.dumps(
+        {"S": {"include": ["other.fake", "other.json"]}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schem(["main.fake"])
+    assert (cfg.FROM_FAKE, cfg.FROM_JSON) == (1, 2)
+
+
+def test_config_saves_as_json_whatever_the_schema_format(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "schema.fake").write_text(json.dumps({"S": {"N": 5}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schem(["schema.fake"])
+    cfg.save("out.json")
+    assert json.loads((tmp_path / "out.json").read_text()) == {"N": 5}
+
+
+def test_malformed_schema_file_raises_value_error(tmp_path, monkeypatch):
+    (tmp_path / "bad.json").write_text("{nope")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="bad.json"):
+        pyconfix().load_schem(["bad.json"])
+
+
+def test_serializer_knows_nothing_about_options():
+    assert not hasattr(serializer, "ConfigOption")
+    assert not hasattr(serializer, "parse_options")
+
+
 def test_unknown_extension_falls_back_to_json(tmp_path):
     p = tmp_path / "cfg.unknownext"
     serializer.write(str(p), {"k": 1})           # no handler -> JSON default
@@ -65,7 +119,7 @@ def test_unknown_extension_falls_back_to_json(tmp_path):
 def test_parse_unknown_type_raises():
     core = Core()
     with pytest.raises(ValueError):
-        serializer.parse_options(core, {"X": {"type": "bogus"}})
+        schema.parse_options(core, {"X": {"type": "bogus"}})
 
 
 def test_read_config_files_merges_in_order(tmp_path):
@@ -105,7 +159,7 @@ def test_apply_config_explicit_missing_file_raises(written_schema):
 
 def _load_dict(core, schema_dict):
     """Build+register options from a plain dict, the way the serializer does."""
-    core.add_options(*serializer.parse_options(core, schema_dict))
+    core.add_options(*schema.parse_options(core, schema_dict))
 
 
 def test_serializer_parses_options_into_core_via_add_options():
@@ -415,7 +469,7 @@ def test_top_level_include_is_loaded(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_schema_enum_out_of_range_default_is_coerced():
-    opts = serializer.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})
+    opts = schema.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})
     e = opts[0]
     assert e.option_type == ConfigOptionType.ENUM
     assert e.default == "A"          # coerced to first choice, like ConfigOption does
@@ -423,7 +477,7 @@ def test_schema_enum_out_of_range_default_is_coerced():
 
 
 def test_schema_enum_valid_default_unaffected():
-    opts = serializer.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "B"}})
+    opts = schema.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "B"}})
     e = opts[0]
     assert e.default == "B"
     assert e.value == "B"
@@ -432,7 +486,7 @@ def test_schema_enum_valid_default_unaffected():
 def test_schema_enum_matches_direct_configoption_coercion():
     direct = ConfigOption(name="E", option_type=ConfigOptionType.ENUM,
                           choices=["A", "B"], default="ZZZ")
-    via_schema = serializer.parse_options(
+    via_schema = schema.parse_options(
         Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})[0]
     assert (direct.default, direct.value) == (via_schema.default, via_schema.value)
 
@@ -452,7 +506,7 @@ def test_field_alias_deps_maps_to_dependencies():
 
 
 def test_field_aliases_def_desc_opts():
-    opts = serializer.parse_options(Core(), {
+    opts = schema.parse_options(Core(), {
         "N": {"type": "int", "def": 7, "desc": "count"},
         "G": {"opts": {"CHILD": True}},
     })
@@ -465,14 +519,14 @@ def test_field_aliases_def_desc_opts():
 
 def test_field_alias_conflicts_with_canonical_raises():
     with pytest.raises(ValueError):
-        serializer.parse_options(
+        schema.parse_options(
             Core(), {"N": {"type": "int", "default": 1, "deps": "A", "dependencies": "B"}})
 
 
 def test_field_alias_matches_canonical_result():
-    aliased = serializer.parse_options(
+    aliased = schema.parse_options(
         Core(), {"N": {"type": "int", "def": 3, "desc": "d", "deps": "true"}})[0]
-    canonical = serializer.parse_options(
+    canonical = schema.parse_options(
         Core(), {"N": {"type": "int", "default": 3, "description": "d", "dependencies": "true"}})[0]
     assert aliased.default == canonical.default
     assert aliased.description == canonical.description
@@ -488,24 +542,24 @@ def test_field_alias_matches_canonical_result():
 ])
 def test_reserved_field_name_rejected_as_option_name(reserved):
     with pytest.raises(ValueError):
-        serializer.parse_options(Core(), {reserved: True})
+        schema.parse_options(Core(), {reserved: True})
 
 
 def test_reserved_field_name_rejected_when_nested_in_group():
     with pytest.raises(ValueError):
-        serializer.parse_options(
+        schema.parse_options(
             Core(), {"G": {"type": "group", "options": {"deps": True}}})
 
 
 def test_uppercase_reserved_word_is_allowed_as_option_name():
     # Only the exact lowercase field keys are reserved; a distinct name is fine.
-    opts = serializer.parse_options(Core(), {"TYPE": True, "DATA": 5})
+    opts = schema.parse_options(Core(), {"TYPE": True, "DATA": 5})
     assert {o.name for o in opts} == {"TYPE", "DATA"}
 
 
 def test_needs_in_json_schema_raises_clear_error():
     with pytest.raises(ValueError, match="Python API"):
-        serializer.parse_options(
+        schema.parse_options(
             Core(), {"ACT": {"type": "group", "options": {"X": True}, "needs": "A"}})
 
 

@@ -12,8 +12,8 @@ options, building options from parsed schema data, evaluating dependencies,
 flattening/searching for display, executing actions, applying saved selections
 and dumping/diffing the current configuration.
 
-It knows nothing about files (that is :mod:`serializer`), nothing about the
-terminal (that is :mod:`tui`) and nothing about orchestration (that is
+It knows nothing about files (that is :mod:`schema` and :mod:`serializer`),
+nothing about the terminal (that is :mod:`tui`) and nothing about orchestration (that is
 :mod:`runner`). Those higher layers drive this manager.
 """
 

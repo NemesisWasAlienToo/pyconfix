@@ -170,6 +170,7 @@ Main Config:
 from pyconfix import pyconfix, ConfigOption
 
 config = pyconfix()
+config.config_name = "Main Config"
 config.add_options(
     ConfigOption("ENABLED", True),
     ConfigOption("PORT", 8080),
@@ -177,6 +178,8 @@ config.add_options(
     ConfigOption("LOG_LEVEL", choices=["DEBUG", "INFO", "ERROR"]),
 )
 ```
+
+The name shows at the top of the menu. Without one, it shows `Unnamed`.
 
 Option names can't contain spaces and must be unique across the whole config.
 
@@ -927,6 +930,7 @@ Everything below is imported from `pyconfix`.
 | `diff()`                                                              | Only values that differ from their default |
 | `create_evaluation_session()`                                         | Make a session                             |
 
+* `config.config_name` is the name shown at the top of the menu
 * `output_file` defaults to `pyconfix_output_config.json`
 * `load_schema`, `apply_config` and `include` return the config, so you can chain them
 * `apply_config` raises an error if a file is missing

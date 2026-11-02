@@ -17,7 +17,7 @@ setup(
     author="Nemesis",
     author_email="nemesiswasalientoo@proton.me",
     url="https://github.com/NemesisWasAlienToo/pyconfix",
-    packages=["pyconfix"],
+    packages=["pyconfix", "pyconfix.formats"],
     python_requires=">=3.11",
     license="MIT",
     install_requires=[

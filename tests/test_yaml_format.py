@@ -10,7 +10,7 @@ import pytest
 
 from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema, serializer
 from pyconfix import __main__ as cli
-from pyconfix import yaml_format
+from pyconfix.formats import yaml_format
 
 SCHEMA = """
 Main:
@@ -142,7 +142,7 @@ def test_json_only_use_never_imports_yaml(tmp_path):
 
 
 def test_only_yaml_format_mentions_yaml():
-    assert yaml_format.YamlFormat.extensions == (".yaml", ".yml")
+    assert yaml_format.extensions == (".yaml", ".yml")
     assert not hasattr(serializer, "yaml")
 
 

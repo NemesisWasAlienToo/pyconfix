@@ -11,91 +11,37 @@ This module owns *file* concerns: turning files on disk into plain Python data
 and back. It knows nothing about options: :mod:`schema` turns the data of a
 schema file into options, and core produces the data for a saved configuration.
 
-File formats are pluggable via a small registry, so new formats (YAML, TOML,
-kconfig, ...) can be added with ``register_format`` without touching the rest of
-the library. A format only has to turn a file into plain data, and a malformed
-file into a ``ValueError``. JSON is built in.
+A file is read by the module in :mod:`formats` that handles its extension, and
+any file without one is read as JSON. Configurations are always written as JSON.
 """
 
 import json
 import os
 
-
-# --------------------------------------------------------------------------- #
-# Pluggable file formats
-# --------------------------------------------------------------------------- #
-
-class ConfigFormat:
-    """Base class for a file format handler.
-
-    Subclass and implement ``read``/``write``, set ``extensions``, then register
-    with :func:`register_format`.
-    """
-    extensions = ()
-
-    def available(self):
-        """Whether this format can be used here. A format with an optional
-        dependency overrides this, so it is not offered when that is missing."""
-        return True
-
-    def read(self, path):
-        raise NotImplementedError
-
-    def write(self, path, data):
-        raise NotImplementedError
-
-
-class JsonFormat(ConfigFormat):
-    extensions = (".json",)
-
-    def read(self, path):
-        with open(path, "r") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid json file: {path}") from e
-
-    def write(self, path, data):
-        with open(path, "w") as f:
-            json.dump(data, f, indent=4)
-
-
-_DEFAULT_FORMAT = JsonFormat()
-_FORMATS = [_DEFAULT_FORMAT]
-
-
-def register_format(fmt):
-    """Register a new file format handler (takes precedence over built-ins)."""
-    _FORMATS.insert(0, fmt)
-    return fmt
-
-
-def _format_for(path):
-    ext = os.path.splitext(path)[1].lower()
-    for fmt in _FORMATS:
-        if ext in fmt.extensions:
-            return fmt
-    return _DEFAULT_FORMAT
+from .formats import FORMATS
 
 
 def extensions():
-    """Every registered extension, oldest format first, so JSON comes first."""
-    return [ext for fmt in reversed(_FORMATS) for ext in fmt.extensions]
+    """Every supported extension, JSON first."""
+    return [ext for fmt in FORMATS for ext in fmt.extensions]
 
 
 def available_extensions():
     """Like :func:`extensions`, leaving out formats that are not available here."""
-    return [ext for fmt in reversed(_FORMATS) if fmt.available() for ext in fmt.extensions]
+    return [ext for fmt in FORMATS if fmt.available() for ext in fmt.extensions]
 
 
 def read(path):
     """Read a file into plain Python data using the format for its extension."""
-    return _format_for(path).read(path)
+    ext = os.path.splitext(path)[1].lower()
+    fmt = next((fmt for fmt in FORMATS if ext in fmt.extensions), FORMATS[0])
+    return fmt.read(path)
 
 
 def write(path, data):
-    """Write plain Python data to a file using the format for its extension."""
-    _format_for(path).write(path, data)
+    """Write plain Python data to a JSON file."""
+    with open(path, "w") as f:
+        json.dump(data, f, indent=4)
 
 
 # --------------------------------------------------------------------------- #

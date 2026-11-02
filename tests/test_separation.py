@@ -6,6 +6,7 @@ data, runner composition/forwarding, and the curses-free headless guarantee.
 """
 
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -41,38 +42,53 @@ def test_serializer_json_roundtrip(tmp_path):
     assert serializer.read(str(p)) == {"a": 1, "b": "two"}
 
 
-def test_register_custom_format(tmp_path, monkeypatch):
-    class UpperJson(serializer.JsonFormat):
-        extensions = (".weird",)
-        def read(self, path):
-            with open(path) as f:
-                return {"READ_BY": "weird", **json.load(f)}
-
-    # don't leak the registration into other tests
-    monkeypatch.setattr(serializer, "_FORMATS", list(serializer._FORMATS))
-    serializer.register_format(UpperJson())
-    p = tmp_path / "cfg.weird"
-    p.write_text(json.dumps({"k": 1}))
-    assert serializer.read(str(p)) == {"READ_BY": "weird", "k": 1}
-
-
-class FakeFormat(serializer.ConfigFormat):
-    """Stands in for a new schema format: JSON on disk, its own extension."""
+class FakeFormat:
+    """Stands in for a new module in pyconfix/formats: JSON on disk, its own extension."""
     extensions = (".fake",)
 
-    def read(self, path):
+    @staticmethod
+    def available():
+        return True
+
+    @staticmethod
+    def read(path):
         with open(path) as f:
             return json.load(f)
 
 
 @pytest.fixture
 def fake_format(monkeypatch):
-    # don't leak the registration into other tests
-    monkeypatch.setattr(serializer, "_FORMATS", list(serializer._FORMATS))
-    serializer.register_format(FakeFormat())
+    monkeypatch.setattr(serializer, "FORMATS", [*serializer.FORMATS, FakeFormat])
 
 
-def test_schema_loads_from_a_registered_format(tmp_path, monkeypatch, fake_format):
+def test_format_module_reads_its_extension(tmp_path, fake_format):
+    p = tmp_path / "cfg.fake"
+    p.write_text(json.dumps({"k": 1}))
+    assert serializer.read(str(p)) == {"k": 1}
+
+
+def test_formats_are_discovered_with_json_first():
+    assert [fmt.__name__.rsplit(".", 1)[1] for fmt in serializer.FORMATS] == ["json_format", "yaml_format"]
+
+
+def test_every_format_has_the_expected_shape():
+    for fmt in serializer.FORMATS:
+        assert fmt.extensions and callable(fmt.read) and callable(fmt.available)
+
+
+def test_formats_package_is_installed():
+    setup = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "setup.py")
+    with open(setup) as f:
+        assert '"pyconfix.formats"' in f.read()
+
+
+def test_write_is_always_json(tmp_path):
+    p = tmp_path / "cfg.yaml"
+    serializer.write(str(p), {"k": 1})
+    assert json.loads(p.read_text()) == {"k": 1}
+
+
+def test_schema_loads_from_a_new_format(tmp_path, monkeypatch, fake_format):
     (tmp_path / "schema.fake").write_text(json.dumps({"S": {"N": 5}}))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix().load_schem(["schema.fake"])

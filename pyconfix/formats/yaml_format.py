@@ -9,12 +9,12 @@
 
 Everything YAML lives here. PyYAML is optional (``pip install pyconfix[yaml]``), so
 it is only imported when a YAML file is read. The rest of the library only sees
-the plain data :meth:`YamlFormat.read` returns, the same shape a JSON file gives.
+the plain data :func:`read` returns, the same shape a JSON file gives.
 """
 
 import importlib.util
 
-from .serializer import ConfigFormat
+extensions = (".yaml", ".yml")
 
 
 def _import_yaml():
@@ -49,20 +49,18 @@ def _check_keys(data, path):
             _check_keys(value, path)
 
 
-class YamlFormat(ConfigFormat):
-    extensions = (".yaml", ".yml")
+def available():
+    return importlib.util.find_spec("yaml") is not None
 
-    def available(self):
-        return importlib.util.find_spec("yaml") is not None
 
-    def read(self, path):
-        yaml = _import_yaml()
-        with open(path, "r") as f:
-            try:
-                data = yaml.load(f, Loader=_loader(yaml))
-            except yaml.YAMLError as e:
-                raise ValueError(f"Invalid yaml file: {path}") from e
-        if not isinstance(data, dict):
-            raise ValueError(f"Invalid yaml file: {path}: the top level must be a mapping")
-        _check_keys(data, path)
-        return data
+def read(path):
+    yaml = _import_yaml()
+    with open(path, "r") as f:
+        try:
+            data = yaml.load(f, Loader=_loader(yaml))
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid yaml file: {path}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid yaml file: {path}: the top level must be a mapping")
+    _check_keys(data, path)
+    return data

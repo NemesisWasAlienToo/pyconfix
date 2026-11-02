@@ -498,7 +498,7 @@ Each task runs once per run. Set `do_not_cache` to run it every time.
 
 ## Checks
 
-An `external` option is a value from outside. You can't change it in the menu.
+An `external` option is a value from outside. You can't change it in the menu, and saved settings don't change it.
 
 In a schema, its `default` is a script that runs when the schema loads. Its value is true if the script exits with 0. In Python, work out the value yourself.
 

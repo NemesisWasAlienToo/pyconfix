@@ -11,7 +11,7 @@ _spec.loader.exec_module(_version_module)
 setup(
     name="pyconfix",
     version=_version_module.__version__,
-    description="A simple feature managment tool library",
+    description="The only automation tool you'll ever need",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="Nemesis",

@@ -79,6 +79,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Unterminated strings raise an error
 - Bad schema top entries raise an error
 - Negative numbers work with -o
+- Saved configs no longer override external options
 
 ### Removed
 - register_format, ConfigFormat and JsonFormat

@@ -214,6 +214,8 @@ class Core:
         for option in options:
             if option.option_type == ConfigOptionType.GROUP:
                 self._apply_config_to_options(option.options, saved_config)
+            elif option.option_type == ConfigOptionType.EXTERNAL:
+                continue
             elif option.name in saved_config:
                 value = saved_config[option.name]
                 # A saved config file may be stale: a blank enum restores the default.

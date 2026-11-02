@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/NemesisWasAlienToo/pyconfix/actions/workflows/tests.yml/badge.svg)](https://github.com/NemesisWasAlienToo/pyconfix/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/NemesisWasAlienToo/pyconfix/blob/master/LICENSE)
 
 > The only automation tool you'll ever need.
 
@@ -494,7 +494,7 @@ config.release()
 
 If `BUILD` fails, `TEST` and `RELEASE` don't run, and `RELEASE` returns false.
 
-Each task runs once per run. Set `do_not_cache` to run it every time.
+Each task runs once per run, because the [session](#the-session) remembers its result. Set `do_not_cache` to run it every time.
 
 ## Checks
 
@@ -792,7 +792,11 @@ value, trace = config.BUILD()         # run a task
 
 ### The session
 
-Functions for `dependencies`, `needs` and tasks all receive a session, called `x` here. It works out each option once.
+A session remembers results, so nothing is worked out twice. This covers option lookups, dependencies and tasks. It keeps the menu fast, and if `TEST` and `DEPLOY` both need `BUILD`, `BUILD` runs once.
+
+Set `do_not_cache` on an option to recompute it on every use instead.
+
+Each `config.NAME` starts a new session. Functions for `dependencies`, `needs` and tasks receive it as `x`:
 
 ```python
 from pyconfix import pyconfix, ConfigOption

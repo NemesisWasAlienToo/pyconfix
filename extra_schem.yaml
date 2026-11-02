@@ -1,0 +1,9 @@
+YAML Config:
+  YAML_ENABLED: true
+  YAML_THREADS:
+    default: 4
+    deps: YAML_ENABLED
+  YAML_LEVEL:
+    default: INFO
+    choices: [DEBUG, INFO, ERROR]
+    deps: YAML_ENABLED && YAML_THREADS > 1

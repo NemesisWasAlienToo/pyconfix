@@ -98,6 +98,14 @@ def test_config_saves_as_json_whatever_the_schema_format(tmp_path, monkeypatch, 
     assert json.loads((tmp_path / "out.json").read_text()) == {"N": 5}
 
 
+@pytest.mark.parametrize("content", [[1, 2], {}, {"A": {}, "B": {}}, {"A": 5}, {"A": None}, {"A": [1]}])
+def test_schema_file_of_the_wrong_shape_raises_value_error(tmp_path, monkeypatch, content):
+    (tmp_path / "schema.json").write_text(json.dumps(content))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="schema.json"):
+        pyconfix().load_schem(["schema.json"])
+
+
 def test_malformed_schema_file_raises_value_error(tmp_path, monkeypatch):
     (tmp_path / "bad.json").write_text("{nope")
     monkeypatch.chdir(tmp_path)

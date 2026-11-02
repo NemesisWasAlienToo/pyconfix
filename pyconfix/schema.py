@@ -16,7 +16,21 @@ built options are handed to the core manager.
 import os
 
 from .option import ConfigOption, ConfigOptionType
-from .serializer import read
+from .serializer import available_extensions, extensions, read
+
+
+def find_schema(stem):
+    """Return ``stem`` with the extension of the first schema file that exists.
+
+    Formats are tried oldest first, so JSON comes before anything registered
+    later. If no file exists, raises ValueError listing the names it looked for,
+    leaving out formats that are not available here.
+    """
+    for ext in extensions():
+        if os.path.exists(stem + ext):
+            return stem + ext
+    names = [stem + ext for ext in available_extensions()]
+    raise ValueError(f"No schema file found, looked for: {', '.join(names)}")
 
 
 def load_schema(core, schem_files):
@@ -37,9 +51,11 @@ def _load_file_options(core, path):
     if not os.path.exists(path):
         raise ValueError(f"Config file '{path}' does not exist.")
     data = read(path)
-    if len(data.keys()) != 1:
-        raise ValueError(f"Schema file {path} has more than one top entry")
+    if not isinstance(data, dict) or len(data) != 1:
+        raise ValueError(f"Schema file {path} must have exactly one top entry")
     name, options = next(iter(data.items()))
+    if not isinstance(options, dict):
+        raise ValueError(f"Schema file {path}: '{name}' must hold a mapping of options")
     base_path = os.path.dirname(os.path.abspath(path))
     parsed = parse_options(core, options, base_path)
     return name, parsed

@@ -30,6 +30,7 @@ Do you need an interactive config menu like Linux menuconfig, but without C or a
 
 ```bash
 pip install pyconfix
+pip install pyconfix[yaml]   # to write schema files in YAML
 ```
 ## Quick start
 
@@ -75,7 +76,7 @@ python menu.py
 
 Loading the schema and applying a saved config are explicit, chainable steps
 (each returns the instance), and only `run()` starts the interactive TUI.
-`load_schem()` defaults to `pyconfixfile.json`. A config file passed to
+`load_schem()` defaults to `pyconfixfile.json`, then `pyconfixfile.yaml` if PyYAML is installed. A config file passed to
 `apply_config()` must exist (a missing one raises), so to reload a previous save
 check that it's there first — see `example.py`, which loads `pyconfix_output_config.json`
 only if it exists and lets the TUI's save create it on the first run.
@@ -162,7 +163,7 @@ chainable and return the instance):
 ```python
 pyconfix()
 
-load_schem(schem_files: list[str] = ["pyconfixfile.json"])
+load_schem(schem_files: list[str] = None)
 # named config files must exist (missing -> ValueError); no files -> defaults kept
 apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
 

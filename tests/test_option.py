@@ -364,3 +364,13 @@ def test_enum_with_changed_choices_rejects_its_old_default_on_re_enabling():
     with pytest.raises(ValueError, match="E"):
         core._sync_option_value(option, available=True)
 
+
+@pytest.mark.parametrize("choices", [[1, 2], [True, False], ["A", 1], ["A", None], ["A B", "C"]])
+def test_enum_choices_must_be_strings_without_white_space(choices):
+    with pytest.raises(ValueError, match="E"):
+        ConfigOption("E", option_type=ConfigOptionType.ENUM, choices=choices)
+
+
+def test_enum_choices_must_be_strings_in_schema():
+    with pytest.raises(ValueError, match="E"):
+        parse_options(Core(), {"E": {"choices": [1, 2]}})

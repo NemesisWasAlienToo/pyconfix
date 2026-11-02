@@ -23,6 +23,9 @@ setup(
     install_requires=[
         "windows-curses ; platform_system == 'Windows'"
     ],
+    extras_require={
+        "yaml": ["pyyaml"],
+    },
     entry_points={
         'console_scripts': [
             'pyconfix = pyconfix.__main__:main',

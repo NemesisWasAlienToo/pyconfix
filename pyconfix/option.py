@@ -62,8 +62,8 @@ class ConfigOption:
                 raise ValueError(f"Multiple choice option {name} must have at least one choice")
             if default not in (choices or []):
                 default = choices[0]
-            if any(' ' in choice for choice in (choices or [])):
-                raise ValueError(f"Choice names cannot contain white space: in option {name}")
+            if any(not isinstance(choice, str) or ' ' in choice for choice in (choices or [])):
+                raise ValueError(f"Choices of option {name} must be strings without white space")
 
         if option_type == ConfigOptionType.ACTION and not callable(default):
             raise ValueError(f"Action option {name} must have a callable default value")

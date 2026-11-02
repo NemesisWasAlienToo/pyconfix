@@ -1,5 +1,5 @@
 import time, argparse, sys, os
-from pyconfix import pyconfix, ConfigOption, ConfigOptionType
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema
 from database_module import create_database_module
 import platform
 
@@ -92,7 +92,7 @@ def create_config():
     database_group = config.group_option("database").get()
     config.include(create_database_module(), parent=database_group)
 
-    config.load_schem(schem_files=["schem.json"])
+    config.load_schem(schem_files=[find_schema("schem")])
     return config
 
 def parse_args():

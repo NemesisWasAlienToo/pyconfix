@@ -33,6 +33,11 @@ class ConfigFormat:
     """
     extensions = ()
 
+    def available(self):
+        """Whether this format can be used here. A format with an optional
+        dependency overrides this, so it is not offered when that is missing."""
+        return True
+
     def read(self, path):
         raise NotImplementedError
 
@@ -71,6 +76,16 @@ def _format_for(path):
         if ext in fmt.extensions:
             return fmt
     return _DEFAULT_FORMAT
+
+
+def extensions():
+    """Every registered extension, oldest format first, so JSON comes first."""
+    return [ext for fmt in reversed(_FORMATS) for ext in fmt.extensions]
+
+
+def available_extensions():
+    """Like :func:`extensions`, leaving out formats that are not available here."""
+    return [ext for fmt in reversed(_FORMATS) if fmt.available() for ext in fmt.extensions]
 
 
 def read(path):

@@ -1,7 +1,29 @@
 import argparse
 import os
+import sys
 from ._version import __version__ as VERSION
+from .option import ConfigOptionType
 from .runner import pyconfix
+
+def run_action(config, name, show_value, show_trace):
+    """Run the action ``name`` and return whether it succeeded."""
+    option = config.get_option(name)
+    if option is None or option.option_type != ConfigOptionType.ACTION:
+        print(f"'{name}' is not a task", file=sys.stderr)
+        return False
+    value, trace = config.get(name)()
+    if show_value:
+        print(f"Value: {value}")
+    if show_trace:
+        print(f"Trace: {trace}")
+    # A disabled action never starts, so its trace is empty.
+    if not trace:
+        print(f"Task '{name}' is disabled", file=sys.stderr)
+        return False
+    if value is False:
+        print(f"Task '{name}' failed", file=sys.stderr)
+        return False
+    return True
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
@@ -109,12 +131,7 @@ def main():
 
     # 3. Either run the interactive TUI or answer the headless query.
     if args.cli or args.print or args.dump or args.run:
-        if args.run:
-            value, trace = config.get(args.run)()
-            if args.value:
-                print(f"Value: {value}")
-            if args.trace:
-                print(f"Trace: {trace}")
+        succeeded = not args.run or run_action(config, args.run, args.value, args.trace)
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
         elif args.dump:
@@ -122,6 +139,8 @@ def main():
         elif not args.run:
             # Pure CLI mode (no query/run): persist the applied configuration.
             config.save(output_file)
+        if not succeeded:
+            sys.exit(1)
     else:
         config.run(output_file=output_file, show_disabled=args.show_disabled)
 

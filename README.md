@@ -4,437 +4,649 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> A single‑file, curses‑powered, highly customizable, menuconfig‑style configuration editor for any project.
+> The only automation tool you'll ever need.
 
----
+Write your settings and tasks in one file. Pick your settings in a menu. Run your tasks from the menu or the command line.
 
-## Why?
+```yaml
+My Project:
+  RELEASE: false
+  TARGET: [linux, windows]
 
-Do you need an interactive config menu like Linux menuconfig, but without C or a build step? pyconfix is forty kilobytes of pure Python you can drop into any repo—no external deps, no compilation. It also spits out JSON or Kconfig‑style header files, so it plugs straight into C/C++, CMake, Conan, Makefiles—anything that can consume a generated file.
+  BUILD:
+    type: action
+    default: echo "Building..."
 
----
+  TEST:
+    type: action
+    needs: BUILD()
+    default: echo "Testing..."
 
-## Features
-
-* Hierarchical options – `bool`, `int`, `string`, `enum`, recursive groups.
-* Boolean & arithmetic dependencies with logical operators `&&`, `||`, `!`, comparison/relational operators (`==`, `!=`, `>`, `>=`, `<`, `<=`), arithmetic expressions (`+`, `-`, `*`, `/`, `%`), and bitwise operators (`&`, `|`, `^`, `<<`, `>>`).
-* Composable schemas – `"include"` at any level: split large configs, even factoring a single group's contents into its own file.
-* Instant search (`/`).
-* Abort key – Ctrl+A exits search, input boxes etc.
-* Live validation – options auto‑hide when dependencies fail.
-* Pluggable save hook – write JSON, YAML, C headers, env‑files – whatever.
-* Action options – define executable tasks with dependencies that can be run interactively or via CLI.
-* 100% standard library (Windows users: `pip install windows‑curses`).
-
-## Installation
-
-```bash
-pip install pyconfix
-pip install pyconfix[yaml]   # to write schema files in YAML
+  DEPLOY:
+    type: action
+    deps: RELEASE && TARGET == linux
+    needs: TEST()
+    default: echo "Deploying..."
 ```
-## Quick start
 
-### Using the command
-
-In order to use pyconfix in the most minimal and easy-to-use setup, just create a __pyconfixfile.json__ file inside the current working directory, add your options to it (example bellow) and run:
+Save this as `pyconfixfile.yaml`, then open the menu:
 
 ```sh
 pyconfix
 ```
 
-Here's an example of how the json file could look like:
+Or run a task directly:
 
-```json
-{
-    "Test Config": {
-        "ENABLE_FEATURE_A": true,
-        "DISABLED_BY_DEFAULT": false
-    }
-}
+```sh
+pyconfix --run DEPLOY -o RELEASE=true
 ```
 
-The single top-level key is the configuration name, and every option is keyed by
-its own name. Types are deduced from the value, so a plain `true`/`false` is all
-you need for a boolean. See [Schema format](#schema-format) for the full set of
-shorthands.
-
-### Writing runner
-
-A minimal pyconfix script that can be run and also serve as a starting point for further customizations could look like:
-
-```python
-# menu.py
-from pyconfix import pyconfix
-pyconfix().load_schema().apply_config().run()
+```text
+Building...
+Testing...
+Deploying...
 ```
 
-Then run it:
+## Contents
 
-```bash
-python menu.py
+* [Features](#features)
+* [Installation](#installation)
+* [Command line](#command-line)
+* [Menu keys](#menu-keys)
+* [Options](#options)
+* [Types](#types)
+* [Fields](#fields)
+* [Groups](#groups)
+* [Include](#include)
+* [Tasks](#tasks)
+* [Running other tasks](#running-other-tasks)
+* [Checks](#checks)
+* [Aliases](#aliases)
+* [Expressions](#expressions)
+* [YAML](#yaml)
+* [JSON](#json)
+* [Python](#python)
+  * [Minimal example](#minimal-example)
+  * [Reading values](#reading-values)
+  * [The session](#the-session)
+  * [Splitting configs](#splitting-configs)
+  * [Saving in any format](#saving-in-any-format)
+  * [Conan](#conan)
+  * [API reference](#api-reference)
+* [New file formats](#new-file-formats)
+* [Examples](#examples)
+* [Roadmap](#roadmap)
+
+## Features
+
+* Settings: bool, int, string, enum and groups
+* Tasks written as shell scripts or Python functions
+* Tasks that run other tasks
+* Options that turn on and off based on other options
+* A terminal menu with search
+* Schemas in YAML or JSON, or options in Python
+* Aliases: reusable tasks and enums
+* Checks that run when the schema loads
+* Save your settings in any format
+* Works with C/C++, CMake, Conan, Makefiles and anything else that reads a file
+
+## Installation
+
+```sh
+pip install pyconfix[yaml]
 ```
 
-Loading the schema and applying a saved config are explicit, chainable steps
-(each returns the instance), and only `run()` starts the interactive TUI.
-`load_schema()` defaults to `pyconfixfile.json`, then `pyconfixfile.yaml` if PyYAML is installed. A config file passed to
-`apply_config()` must exist (a missing one raises), so to reload a previous save
-check that it's there first — see `example.py`, which loads `pyconfix_output_config.json`
-only if it exists and lets the TUI's save create it on the first run.
+Needs Python 3.11 or newer. Leave out `[yaml]` if you don't use YAML.
 
-Press `/` to search, Enter to toggle/edit, `s` to save, `q` to quit.
-The minimal example could be found in the __minimal_example.py__ script. To see a frther customized version you can check out __example.py__ script which uses the __schem.json__ file which uses more advanced features like aliases and tasks.
+## Command line
 
-### Custom save function
+| Command                       | What it does                 |
+| ----------------------------- | ---------------------------- |
+| `pyconfix`                    | Open the menu                |
+| `pyconfix file.yaml`          | Use a specific schema        |
+| `pyconfix --run NAME`         | Run a task                   |
+| `pyconfix --run NAME -v`      | Also print its return value  |
+| `pyconfix --run NAME -t`      | Also print the tasks it ran  |
+| `pyconfix --print NAME`       | Print an option's value      |
+| `pyconfix --dump`             | Print all values             |
+| `pyconfix -o NAME=VALUE`      | Set a value for this run     |
+| `pyconfix -l saved.json`      | Load saved settings          |
+| `pyconfix --show-disabled`    | Show disabled options        |
+| `pyconfix --version`          | Print the version            |
 
-Want to emit something other than the default JSON? Pass a `save_func` callable to
-`run()`. It receives the flattened config dict, so you can write out any format
-you need:
+Without a file name, pyconfix looks for `pyconfixfile.json`, then `pyconfixfile.yaml`.
 
-```python
-def write_header(config_data):
-    with open("config.h", "w") as f:
-        for key, value in config_data.items():
-            f.write(f"#define {key} {value}\n")
+The menu saves to `pyconfix_output_config.json`. The next run loads it.
 
-pyconfix().load_schema(["schem.json"]).run(save_func=write_header)
+`--run` exits with 1 if the task fails, is disabled or doesn't exist. Otherwise it exits with 0.
+
+## Menu keys
+
+| Key    | What it does            |
+| ------ | ----------------------- |
+| ↑ / ↓  | Move                    |
+| Enter  | Toggle or edit          |
+| c      | Collapse or expand      |
+| /      | Search                  |
+| s      | Save                    |
+| d      | Save only what changed  |
+| Ctrl+D | Show description        |
+| h      | Help                    |
+| Ctrl+A | Cancel input            |
+| q      | Quit                    |
+
+## Options
+
+A schema file has one top entry, which is the name of the config. Everything inside it is an option.
+
+The type comes from the value.
+
+**YAML**
+
+```yaml
+Main Config:
+  ENABLED: true
+  PORT: 8080
+  HOST: localhost
+  LOG_LEVEL: [DEBUG, INFO, ERROR]
 ```
 
-## Headless / CLI mode
-
-Drive the schema parser non‑interactively – handy for scripts and pipelines. Just
-skip `run()` (which launches the TUI) and read values after loading/applying:
-
-```bash
-python - <<'PY'
-import pyconfix
-cfg = pyconfix.pyconfix()
-cfg.load_schema(["schem.json"])
-cfg.apply_config(["prev.json"])   # apply a previously saved config (optional)
-print(cfg.dump())
-PY
-```
-
-## Python API
-
-If you’d rather drive everything from code, import the class and load/apply
-explicitly:
-
-```python
-from pyconfix import pyconfix
-
-cfg = pyconfix()
-cfg.load_schema(["main.json", "extras.json"])   # parse schema files into options
-cfg.apply_config(["prev.json"])                # apply a saved config (optional)
-cfg.run(output_file="final.json", show_disabled=True)  # interactive TUI
-print(cfg.get("HOST"))   # access a value programmatically
-print(cfg.HOST)          # the same
-```
-
-When building options in code, the type is deduced from the value if you omit
-`option_type` — `default` is the second positional argument, so a simple option
-is just a name and a value (mirroring the JSON short forms):
-
-```python
-from pyconfix import pyconfix, ConfigOption
-
-cfg = pyconfix()
-cfg.add_options(
-    ConfigOption("ENABLE", True),                 # -> bool
-    ConfigOption("PORT", 8080),                   # -> int
-    ConfigOption("HOST", "localhost"),            # -> string
-    ConfigOption("LEVEL", choices=["A", "B"]),    # -> enum (default = first choice)
-)
-```
-
-Deduction also covers `action` (a callable default) and `group` (an `options`
-list). Pass `option_type` explicitly for `external`, or to override.
-
-Or done in one liner:
-
-```py
-from pyconfix import pyconfix
-
-pyconfix().load_schema().apply_config().run()
-```
-
-Method signatures for reference (`load_schema`, `apply_config` and `include` are
-chainable and return the instance):
-
-```python
-pyconfix()
-
-load_schema(schema_files: list[str] = None)
-# named config files must exist (missing -> ValueError); no files -> defaults kept
-apply_config(config_files: list[str] | None = None, overlay: dict | None = None)
-
-# merge another config's options into this one (Python-side 'include')
-include(other: pyconfix, parent: ConfigOption | None = None)
-
-run(output_file: str = "pyconfix_output_config.json",
-    show_disabled: bool = False,
-    save_func: Callable[[dict], None] | None = None)
-```
-
-### Composing configs across files
-
-`include()` is the Python counterpart to the JSON `include` directive: it takes
-another `pyconfix` and adds all of its options — nested children and actions
-included — to the config that includes it. Names stay globally unique, so a
-collision raises. Pass a group as `parent` to nest the imported options under it.
-
-```python
-# modules/database.py — a self-contained, standalone-runnable config
-from pyconfix import pyconfix, ConfigOption
-
-database = pyconfix()
-database.add_options(ConfigOption("DB_HOST", "localhost"))   # type deduced from the value
-
-@database.action_option(dependencies=lambda x: x.DB_HOST)
-def migrate(x):
-    print(f"migrating {x.DB_HOST}")
-```
-
-```python
-# menu.py — the root pulls modules together however it likes
-from pyconfix import pyconfix
-from modules import database, web
-
-cfg = pyconfix()
-cfg.include(database.database)                          # merge at top level
-cfg.include(web.web, parent=cfg.group_option("web").get())  # nest under a group
-cfg.load_schema(["root.json"]).run()
-```
-
-Because an included module builds its own instance, it also runs on its own
-(`database.load_schema().run()`) — the same options are reusable standalone and
-composed. How you get hold of the other config (import a module, call a builder,
-read a variable) is entirely up to you.
-
-## Actions
-
-pyconfix supports defining `action` options that represent executable tasks. Each action can depend on other options or actions, and results are cached per execution chain.
-
-### Defining actions
-
-Actions must be defined via Python code:
-
-```python
-from pyconfix import pyconfix, ConfigOption
-
-def build(x):
-    print("Building...")
-    return True
-
-def deploy(x):
-    print("Deploying...")
-    return True
-
-cfg = pyconfix()
-cfg.load_schema(["schem.json"])
-cfg.add_options(
-    ConfigOption(
-        name='build',
-        option_type='action',
-        description='Builds the software',
-        dependencies=lambda x: x.ENABLE_FEATURE_A,
-        default=build,
-        needs=lambda x: x.LOG_LEVEL
-    ),
-    ConfigOption(
-        name='deploy',
-        option_type='action',
-        description='Deploys the software',
-        dependencies=lambda x: x.ENABLE_FEATURE_A,
-        default=deploy,
-        needs=lambda x: x.build()
-    ),
-)
-cfg.apply_config()
-```
-
-### Running actions
-
-* **Interactive mode**: Highlight an action in the TUI and press Enter. pyconfix will topologically sort and execute its dependencies, then the action itself, caching results.
-
-* **CLI mode**: Use the `--run` flag. It runs the action quietly; add `--value` to print its return value and/or `--trace` to print the execution trace:
-
-  ```bash
-  python menu.py --cli --run build
-  python menu.py --cli --run build --value --trace
-  ```
-
-* **Programmatically** (no `run()` needed — just load, apply, then call):
-
-  ```python
-  cfg.load_schema(["schem.json"])
-  cfg.apply_config()
-  result = cfg.get("build")()
-  # or simply
-  result = cfg.build()
-  ```
-
-## Key bindings
-
-| Action             | Key    |
-| ------------------ | ------ |
-| Navigate           | ↑ / ↓  |
-| Toggle / edit      | Enter  |
-| Collapse / expand  | c      |
-| Search             | /      |
-| Save               | s      |
-| Show description   | Ctrl+D |
-| Help               | h      |
-| Abort search/input | Ctrl+A |
-| Quit               | q      |
-
-## Schema format
-
-A schema is a single JSON object whose **one** top-level key is the configuration
-name. Its value maps each **option name** to that option's definition:
+**JSON**
 
 ```json
 {
   "Main Config": {
-    "ENABLE_FEATURE_A": true,
-
-    "LogLevel": {
-      "default": "INFO",
-      "choices": ["DEBUG", "INFO", "WARN", "ERROR"],
-      "dependencies": "ENABLE_FEATURE_A"
-    },
-
-    "TIMEOUT": { "default": 10, "dependencies": "ENABLE_FEATURE_A && LogLevel==DEBUG" },
-
-    "Network": {
-      "HOST": "localhost"
-    },
-
-    "include": ["extra_schem.json"]
+    "ENABLED": true,
+    "PORT": 8080,
+    "HOST": "localhost",
+    "LOG_LEVEL": ["DEBUG", "INFO", "ERROR"]
   }
 }
 ```
 
-Because each option is keyed by its name, names are unique and must not contain
-whitespace. `"include"` is a reserved key — a list of other schema files to pull
-in — and it lives alongside the options.
+**Python**
 
-**Includes are resolved where they sit.** An `"include"` at the top level adds
-the referenced files' options at the top level; an `"include"` placed inside a
-group's options adds them as members of that group. The included file's own
-top-level name is ignored — only its options are merged in, at the include's
-location. This lets you factor a group's contents out into its own file:
-
-```json
-"Network": {
-  "HOST": "localhost",
-  "include": ["network_extra.json"]
-}
-```
-
-Every option defined in `network_extra.json` becomes a child of `Network`.
-
-### Shorthands & type inference
-
-You rarely need to spell out `"type"` — pyconfix deduces it from the value:
-
-| You write                        | Becomes                                          |
-| -------------------------------- | ------------------------------------------------ |
-| `"NAME": true` / `false`         | `bool` with that default                         |
-| `"NAME": 42`                     | `int` with that default                          |
-| `"NAME": "text"`                 | `string` with that default                       |
-| `"NAME": ["A", "B", "C"]`        | `enum` with those choices (default = first)      |
-| `{ "default": ... }`             | type inferred from the default's JSON type       |
-| `{ "choices": [...] }`           | `enum` (default = `default` or the first choice) |
-| `{ "OTHER": ..., "MORE": ... }`  | `group` — any object without `type`/`default`/`choices` is treated as a group whose keys are its child options |
-
-Set `"type"` explicitly to override inference. It is **required** for `action`
-options and registered [aliases](#aliases) (e.g. `tri-state`), since those have
-no value to infer from.
-
-### Full definition object
-
-Any option may be written in long form with these keys:
-
-| Key            | Short  | Applies to       | Notes                                              |
-| -------------- | ------ | ---------------- | -------------------------------------------------- |
-| `type`         | —      | all              | `bool`, `int`, `string`, `enum`, `group`, `action`, or an alias |
-| `default`      | `def`  | leaf options     | initial value (the chosen string for `enum`)       |
-| `choices`      | —      | `enum`           | list of allowed values                             |
-| `description`  | `desc` | all              | shown on the description page (`Ctrl+D`)           |
-| `dependencies` | `deps` | all              | expression controlling availability (see below)   |
-| `data`         | —      | all              | arbitrary payload passed through to your save hook |
-| `options`      | `opts` | `group`          | nested options (or just nest them directly)        |
-| `needs`        | —      | `action`/`group` | expression that may call actions, e.g. `A() && B()` (see note) |
-
-The **Short** column lists an accepted alias for the wordier fields — write
-`"deps"` instead of `"dependencies"`, `"desc"`, `"def"`, or `"opts"`. Setting
-both a field and its alias on the same option is an error.
-
-**Reserved keys.** All of the keys above (and their short aliases, plus
-`include`) are reserved: using one as an option **name** raises an error, since a
-name and a field share the same JSON object. Matching is exact and lowercase, so
-an option may still be named `TYPE` or `DATA` — just not `type` or `data`.
-
-**`needs` can run actions.** It is an expression like `dependencies`, and a name
-followed by `()` runs that action: `"needs": "BUILD() && TEST()"`. `&&` and `||`
-skip their right side when they can, so a failed `BUILD` stops `TEST`. Calls take
-no arguments, and are only allowed in `needs`: a call in `dependencies` raises an
-error, since availability is checked on every redraw.
-
-### Supported option types
-
-| Type     | Notes                                          |
-| -------- | ---------------------------------------------- |
-| `bool`   | `true` / `false`                               |
-| `int`    | any integer                                    |
-| `string` | unicode string                                 |
-| `enum`   | one value from `choices`                       |
-| `group`  | nests other options (explicit or by nesting)   |
-| `action` | executable task option                         |
-
-### Groups
-
-A group can be written explicitly with `"type": "group"` and an `"options"`
-object, or implicitly by simply nesting named options — both forms below are
-equivalent:
-
-```json
-"Network": {
-  "type": "group",
-  "options": {
-    "HOST": "localhost"
-  }
-}
-```
-
-```json
-"Network": {
-  "HOST": "localhost"
-}
-```
-
-Use the explicit form when the group itself needs metadata such as
-`dependencies` (which cascade to every child).
-
-### Aliases
-
-You can register **ENUM** and **ACTION** alias types and reuse them in schema files and the Python API. This is useful for reusing common choice sets like tri-state options, or a command that several actions share.
-
-- Python usage: register the alias before loading the schema (or before `run()`), then create options from it:
 ```python
-cfg.register_alias(
-    name='tri-state', 
-    option_type=ConfigOptionType.ENUM,
-    choices=['INTEGRATED', 'MODULE', 'DISABLED']
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("ENABLED", True),
+    ConfigOption("PORT", 8080),
+    ConfigOption("HOST", "localhost"),
+    ConfigOption("LOG_LEVEL", choices=["DEBUG", "INFO", "ERROR"]),
 )
 ```
 
-Any extra field on an action alias is an argument. Values set on the alias are
-defaults, and each option using it can add or override them. A script reads them
-as environment variables, exactly as named, so values need no quoting.
+Option names can't contain spaces and must be unique across the whole config.
+
+An enum starts at its first choice unless you set a `default`.
+
+## Types
+
+| Type       | Holds                                    |
+| ---------- | ---------------------------------------- |
+| `bool`     | true or false                            |
+| `int`      | A whole number                           |
+| `string`   | Text                                     |
+| `enum`     | One of its choices                       |
+| `group`    | Other options                            |
+| `action`   | A task                                   |
+| `external` | A read-only value                        |
+
+Values are type checked. A wrong type raises an error. This also applies to saved files.
+
+## Fields
+
+Give an option more fields to describe it.
+
+**YAML**
 
 ```yaml
-Main:
+Main Config:
+  ENABLED: true
+
+  LOG_LEVEL:
+    default: INFO
+    choices: [DEBUG, INFO, ERROR]
+    desc: How much to log
+    deps: ENABLED
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "ENABLED": true,
+    "LOG_LEVEL": {
+      "default": "INFO",
+      "choices": ["DEBUG", "INFO", "ERROR"],
+      "desc": "How much to log",
+      "deps": "ENABLED"
+    }
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("ENABLED", True),
+    ConfigOption(
+        "LOG_LEVEL",
+        default="INFO",
+        choices=["DEBUG", "INFO", "ERROR"],
+        description="How much to log",
+        dependencies="ENABLED",
+    ),
+)
+```
+
+| YAML / JSON    | Short  | Python         | What it does                        |
+| -------------- | ------ | -------------- | ----------------------------------- |
+| `type`         |        | `option_type`  | The option's type                   |
+| `default`      | `def`  | `default`      | The starting value, or a task       |
+| `choices`      |        | `choices`      | The values of an enum               |
+| `description`  | `desc` | `description`  | Shown in the menu with Ctrl+D       |
+| `dependencies` | `deps` | `dependencies` | Disables the option when false      |
+| `needs`        |        | `needs`        | Must be true before a task runs     |
+| `options`      | `opts` | `options`      | The options inside a group          |
+| `data`         |        | `data`         | Anything you want, for your own use |
+| `do_not_cache` |        | `do_not_cache` | Recompute on every use              |
+
+In a schema, you can't name an option after one of these fields, or `include` or `aliases`. This only applies to lowercase, so `TYPE` is fine.
+
+## Groups
+
+A group holds other options. Its `deps` and `needs` apply to everything inside it.
+
+**YAML**
+
+```yaml
+Main Config:
+  ENABLED: true
+
+  Network:
+    type: group
+    deps: ENABLED
+    options:
+      HOST: localhost
+      PORT: 8080
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "ENABLED": true,
+    "Network": {
+      "type": "group",
+      "deps": "ENABLED",
+      "options": {
+        "HOST": "localhost",
+        "PORT": 8080
+      }
+    }
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("ENABLED", True),
+    ConfigOption(
+        "Network",
+        dependencies="ENABLED",
+        options=[
+            ConfigOption("HOST", "localhost"),
+            ConfigOption("PORT", 8080),
+        ],
+    ),
+)
+```
+
+In YAML and JSON, a group with no fields of its own can be written by nesting:
+
+```yaml
+Main Config:
+  Network:
+    HOST: localhost
+    PORT: 8080
+```
+
+## Include
+
+Pull options in from somewhere else. They land where the `include` sits, so an `include` inside a group adds to that group.
+
+The top entry of an included file is ignored. YAML and JSON can include each other.
+
+**YAML**
+
+```yaml
+Main Config:
+  ENABLED: true
+
+  Network:
+    HOST: localhost
+    include: [network.yaml]
+
+  include: [extras.json]
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "ENABLED": true,
+    "Network": {
+      "HOST": "localhost",
+      "include": ["network.yaml"]
+    },
+    "include": ["extras.json"]
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+database = pyconfix()
+database.add_options(ConfigOption("DB_HOST", "localhost"))
+
+web = pyconfix()
+web.add_options(ConfigOption("WEB_PORT", 8080))
+
+config = pyconfix()
+config.include(database)                                      # at the top level
+config.include(web, parent=config.group_option("web").get())  # inside a group
+```
+
+## Tasks
+
+A task is an option with the type `action`. In a schema, its `default` is a script. In Python, it is a function or `shell_action`.
+
+A script task returns true if the script exits with 0. A Python task fails if it returns `False`.
+
+Scripts can't read option values yet. Python functions can.
+
+**YAML**
+
+```yaml
+Main Config:
+  BUILD:
+    type: action
+    desc: Compiles the project
+    default: |
+      set -e
+      mkdir -p build
+      echo done > build/result.txt
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "BUILD": {
+      "type": "action",
+      "desc": "Compiles the project",
+      "default": "mkdir -p build && echo done > build/result.txt"
+    }
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix, ConfigOption, shell_action
+
+config = pyconfix()
+
+config.add_options(
+    ConfigOption("BUILD", shell_action("mkdir -p build && echo done > build/result.txt")),
+)
+
+@config.action_option()
+def clean(x):
+    print("Cleaning...")
+    return True
+```
+
+## Running other tasks
+
+Use `needs` to run other tasks first. Add `()` to run a task.
+
+Use `deps` to decide if an option is available. `deps` can't run tasks.
+
+**YAML**
+
+```yaml
+Main Config:
+  BUILD:
+    type: action
+    default: echo "Building..."
+
+  TEST:
+    type: action
+    default: echo "Testing..."
+
+  RELEASE:
+    type: action
+    needs: BUILD() && TEST()
+    default: echo "Releasing..."
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "BUILD": { "type": "action", "default": "echo \"Building...\"" },
+    "TEST": { "type": "action", "default": "echo \"Testing...\"" },
+    "RELEASE": {
+      "type": "action",
+      "needs": "BUILD() && TEST()",
+      "default": "echo \"Releasing...\""
+    }
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix
+
+config = pyconfix()
+
+@config.action_option()
+def build(x):
+    print("Building...")
+    return True
+
+@config.action_option()
+def test(x):
+    print("Testing...")
+    return True
+
+@config.action_option(needs="build() && test()")
+def release(x):
+    print("Releasing...")
+    return True
+
+config.release()
+```
+
+If `BUILD` fails, `TEST` and `RELEASE` don't run, and `RELEASE` returns false.
+
+Each task runs once per run. Set `do_not_cache` to run it every time.
+
+## Checks
+
+An `external` option is a value from outside. You can't change it in the menu.
+
+In a schema, its `default` is a script that runs when the schema loads. Its value is true if the script exits with 0. In Python, work out the value yourself.
+
+**YAML**
+
+```yaml
+Main Config:
+  HAS_DOCKER:
+    type: external
+    default: command -v docker
+
+  CONTAINER_BUILD:
+    type: action
+    deps: HAS_DOCKER
+    default: docker build .
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "HAS_DOCKER": { "type": "external", "default": "command -v docker" },
+    "CONTAINER_BUILD": {
+      "type": "action",
+      "deps": "HAS_DOCKER",
+      "default": "docker build ."
+    }
+  }
+}
+```
+
+**Python**
+
+```python
+import shutil
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, shell_action
+
+config = pyconfix()
+config.add_options(
+    ConfigOption(
+        "HAS_DOCKER",
+        shutil.which("docker") is not None,
+        option_type=ConfigOptionType.EXTERNAL,
+    ),
+    ConfigOption(
+        "CONTAINER_BUILD",
+        shell_action("docker build ."),
+        dependencies="HAS_DOCKER",
+    ),
+)
+```
+
+## Aliases
+
+An alias is a reusable type. It can be an enum or a task.
+
+Any extra field on a task alias is an argument. A script reads it as an environment variable, so `text` becomes `$text`. Values set on the alias are defaults, and each option can change them.
+
+**YAML**
+
+```yaml
+Main Config:
+  aliases:
+    tri-state:
+      choices: [INTEGRATED, MODULE, DISABLED]
+    say:
+      type: action
+      text: Hello
+      default: echo "$text"
+
+  USB_DRIVER:
+    type: tri-state
+    default: MODULE
+
+  GREET:
+    type: say
+
+  GOODBYE:
+    type: say
+    text: Goodbye
+```
+
+**JSON**
+
+```json
+{
+  "Main Config": {
+    "aliases": {
+      "tri-state": { "choices": ["INTEGRATED", "MODULE", "DISABLED"] },
+      "say": {
+        "type": "action",
+        "text": "Hello",
+        "default": "echo \"$text\""
+      }
+    },
+
+    "USB_DRIVER": { "type": "tri-state", "default": "MODULE" },
+    "GREET": { "type": "say" },
+    "GOODBYE": { "type": "say", "text": "Goodbye" }
+  }
+}
+```
+
+**Python**
+
+```python
+from pyconfix import pyconfix, ConfigOptionType, shell_action
+
+config = pyconfix()
+
+config.register_alias(
+    name="tri-state",
+    option_type=ConfigOptionType.ENUM,
+    choices=["INTEGRATED", "MODULE", "DISABLED"],
+)
+
+config.register_alias(
+    name="say",
+    option_type=ConfigOptionType.ACTION,
+    default=shell_action('echo "$text"'),
+    text="Hello",
+)
+
+config.add_options(
+    config.option_from_alias("tri-state", name="USB_DRIVER", default="MODULE"),
+    config.option_from_alias("say", name="GREET"),
+    config.option_from_alias("say", name="GOODBYE", text="Goodbye"),
+)
+```
+
+A Python function works too. It receives the arguments as keywords:
+
+```python
+from pyconfix import pyconfix, ConfigOptionType
+
+def say(x, text):
+    print(text)
+
+config = pyconfix()
+config.register_alias(name="say", option_type=ConfigOptionType.ACTION, default=say, text="Hello")
+config.add_options(config.option_from_alias("say", name="GREET"))
+```
+
+This docker alias shows why they are useful:
+
+```yaml
+Main Config:
   aliases:
     docker:
       type: action
@@ -444,213 +656,367 @@ Main:
   HELLO:
     type: docker
     script: echo "Hello from Debian"
+
+  HELLO_ALPINE:
+    type: docker
+    image: alpine:3.20
+    script: echo "Hello from Alpine"
 ```
 
-In a schema, the string `default` of an `external` option is a script, as it is
-for an `action`. The value is `true` if the script exits with 0. It runs while the
-schema loads, which suits a check like this one:
+* An alias can't use the name of a built-in type
+* An alias name can only be registered once
+* Aliases registered in Python work in a schema, if you register them before `load_schema`
 
-```yaml
-HAS_DOCKER:
-  type: external
-  default: command -v docker
-```
+## Expressions
 
-The same through the Python API. `shell_action` turns a script into an action
-body, and a plain function works too: it gets the arguments as keywords.
-
-```python
-cfg.register_alias(
-    name='docker',
-    option_type=ConfigOptionType.ACTION,
-    default=shell_action('docker run --rm -e script debian:stable-slim sh -c "$script"')
-)
-cfg.add_options(cfg.option_from_alias('docker', name='HELLO', script='echo hi'))
-```
-
-### Dependency syntax – cheatsheet
+`deps` and `needs` use the same expressions in YAML, JSON and Python:
 
 ```text
-!ENABLE_FEATURE_A                     # logical NOT
-ENABLE_FEATURE_A && HOST==dev         # logical AND + comparison
-TIMEOUT>5 || HOST==localhost          # logical OR  + relational
-COUNT+5 > MAX_VALUE                   # addition + relational
-SIZE-1 >= MIN_SIZE                    # subtraction + comparison
-VALUE*2 == LIMIT                      # multiplication + equality
-RATIO/3 < 1                           # division + relational
-SIZE%4==0                             # modulus check
-POWER**2 <= LIMIT                     # exponentiation + relational
-BITS & 0xFF == 0xAA                   # bitwise AND + equality
-FLAGS | FLAG_VERBOSE                  # bitwise OR
-MASK ^ 0b1010                         # bitwise XOR
-VALUE<<2 > 1024                       # left shift + relational
-VALUE>>1 == 0                         # right shift + equality
+!DEBUG                        # not
+DEBUG && PORT == 8080         # and
+DEBUG || HOST == 'localhost'  # or
+COUNT + 5 > LIMIT             # + - * / % **
+OFFSET > -1                   # negative numbers
+FLAGS & 0xFF == 0xAA          # & | ^ << >>
+MASK ^ 0b1010                 # hex and binary
+LOG_LEVEL == INFO             # enum choices
+BUILD() && TEST()             # run tasks, in needs only
 ```
 
-## Advanced usage
+* Text goes in single quotes
+* Enum choices are case sensitive
+* A disabled option is `None`
+* Doing math with `None` results in `None`
+* `&&` and `||` stop as soon as they know the result
+
+## YAML
+
+Needs `pip install pyconfix[yaml]`. Use a `.yaml` or `.yml` file.
+
+Save this as `pyconfixfile.yaml` and run `pyconfix`:
+
+```yaml
+My Project:
+  ENABLED: true
+```
+
+Multi-line scripts are easy with `|`:
+
+```yaml
+My Project:
+  BUILD:
+    type: action
+    default: |
+      set -e
+      mkdir -p build
+      echo "Done"
+```
+
+* Keys must be text, so quote a key like `"on"`
+* Dates stay as text
+
+## JSON
+
+Works with no extra install.
+
+Save this as `pyconfixfile.json` and run `pyconfix`:
+
+```json
+{
+  "My Project": {
+    "ENABLED": true
+  }
+}
+```
+
+If a schema exists in both JSON and YAML, JSON wins.
+
+Scripts are one string in JSON, so quote inner quotes with `\"`.
+
+Saved settings are always JSON, whichever schema format you use.
+
+## Python
+
+### Minimal example
+
+Without a schema:
 
 ```python
-import pyconfix
+from pyconfix import pyconfix, ConfigOption
 
-def save_as_header(config_data):
-    with open("config.h", "w") as f:
-        for k, v in config_data.items():
-            f.write(f"#define {k} {v}\n")
+config = pyconfix()
+config.add_options(ConfigOption("ENABLED", True))
+config.run()
+```
 
-pyconfix.pyconfix().load_schema(["schem.json", "extras.json"]).run(
-    output_file="settings.json",
-    save_func=save_as_header,
+With a schema:
+
+```python
+from pyconfix import pyconfix
+
+pyconfix().load_schema().apply_config().run()
+```
+
+`run()` opens the menu. Without it, nothing is shown.
+
+In Python, `dependencies` and `needs` can be a string or a function:
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("ENABLED", True),
+    ConfigOption("PORT", 8080, dependencies="ENABLED"),
+    ConfigOption("HOST", "localhost", dependencies=lambda x: x.ENABLED),
 )
 ```
 
-## Export in any format
-The configurations can be exported in any desirable format by using custom save functions. Here is an example pf the current configurations bein exported in the kconfig format:
-```py
-def custom_save(json_data):
-    with open("output_defconfig", 'w') as f:
-        for key, value in json_data.items():
-            if value == None or (isinstance(value, bool) and value == False):
-                continue
-            if isinstance(value, str):
-                f.write(f"CONFIG_{key}=\"{value}\"\n")
-            else:
-                f.write(f"CONFIG_{key}={value if value != True else 'y'}\n")
-
-# ...
-# The rest of the code
-# ...
-
-config = pyconfix()
-config.load_schema(["schem.json"])
-
-# ...
-# The rest of the code
-# ...
-
-# hand the save hook to run(); in headless mode write it yourself with
-# serializer.write_config(output_file, config.dump(), custom_save)
-config.run(save_func=custom_save)
-```
-
-## Practical remarks
-
-There are multiple ways of attain the value of an option. Options can be treated as config's attributes or their value can be retrieved using the `get` function:
-
-```py
-config = pyconfix()
-config.load_schema(["schem.json"])
-config.apply_config()
-
-# Options can be treated as attributes
-print(f"{config.FEATURES_NAME}")
-print(f"{config.ACTIONS_NAME()}")
-
-# Options can be retrieved using `get` function
-print(f"{config.get("FEATURES_NAME", False)}")
-print(f"{config.get("ACTIONS_NAME", lambda: False)()}")
-```
-
-__IMPORTANT:__ The big difference between attribute syntax and `get` function is that in case of such an option not existing, the attribute syntax will throw an exception while the `get` function returns the default value provided to it.
-
-## Conan integration example
-
-THe recommended way of retrieving the settings in conan is to use the pyconfix to read and dump the current settings. If you are using the default command and the default config names this i trivial:
+### Reading values
 
 ```python
-# conanfile.py
+from pyconfix import pyconfix
+
+config = pyconfix().load_schema(["pyconfixfile.yaml"]).apply_config()
+
+print(config.TARGET)                  # the value
+print(config.get("TARGET"))           # the same
+print(config.get("MISSING", "none"))  # with a fallback
+print(config.get_option("TARGET"))    # the option itself
+print(config.dump())                  # all values
+
+value, trace = config.BUILD()         # run a task
+```
+
+`config.NAME` raises an error if the name doesn't exist. `config.get` returns the fallback.
+
+### The session
+
+Functions for `dependencies`, `needs` and tasks all receive a session, called `x` here. It works out each option once.
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(
+    ConfigOption("LEVEL", choices=["DEBUG", "INFO"]),
+    ConfigOption("test", lambda x: True),
+)
+
+@config.action_option()
+def build(x):
+    x.LEVEL                # a value
+    x.get("LEVEL", "INFO") # a value with a fallback
+    x.get_option("LEVEL")  # the option itself
+    x.test()               # run a task
+    x.config               # the config
+```
+
+Inside a session, a task returns its value. On the config, it returns `(value, trace)`.
+
+You can make your own session. Call `invalidate_cache()` after changing a value:
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(ConfigOption("LEVEL", choices=["DEBUG", "INFO"]))
+
+session = config.create_evaluation_session()
+print(session.LEVEL)  # DEBUG
+
+config.get_option("LEVEL").value = "INFO"
+session.invalidate_cache()
+print(session.LEVEL)  # INFO
+```
+
+Use one session per thread.
+
+### Splitting configs
+
+Use `group_option` to fill a group bit by bit, even from different files. Each part made with `pyconfix()` can still run on its own.
+
+```python
+from pyconfix import pyconfix, ConfigOption
+
+config = pyconfix()
+config.add_options(ConfigOption("ENABLED", True))
+
+deploy = config.group_option("deploy", dependencies="ENABLED")
+deploy.add_options(ConfigOption("REGION", "eu"))
+
+@deploy.action_option()
+def upload(x):
+    print(f"Uploading to {x.REGION}")
+
+config.upload()
+```
+
+### Saving in any format
+
+Pass a `save_func` to write your settings in any format. It receives all the values.
+
+```python
+from pyconfix import pyconfix
+
+def write_header(values):
+    with open("config.h", "w") as f:
+        for name, value in values.items():
+            f.write(f"#define {name} {value}\n")
+
+pyconfix().load_schema().apply_config().run(save_func=write_header)
+```
+
+To save without the menu:
+
+```python
+from pyconfix import pyconfix
+
+config = pyconfix().load_schema().apply_config()
+config.save("settings.json")
+```
+
+### Conan
+
+Read your settings in a conanfile, so you only keep them in one place:
+
+```python
 from conan import ConanFile
 from pyconfix import pyconfix
 
-config = pyconfix()
-config.load_schema()
-config.apply_config()
+config = pyconfix().load_schema().apply_config()
 
 class MyProject(ConanFile):
     name = "myproject"
     version = "1.0"
-
-    # The default options can also be parsed from config.options
-    # but for this example we can just type them in
     options = {
-        "feature_a": [True, False],
-        "log_level": ["DEBUG", "INFO", "WARN", "ERROR"],
+        "release": [True, False],
+        "target": ["linux", "windows"],
     }
-    # This could also directly be parsed from config.dump()
     default_options = {
-        "feature_a": bool(config.ENABLE_FEATURE_A),
-        "log_level": bool(config.LOG_LEVEL),
+        "release": config.RELEASE,
+        "target": config.TARGET,
     }
 ```
 
-Or if you are using a customized script version, you can create and return your config in a function and use it in your conanfile. Let's assume that function is called __get_config__:
+### API reference
+
+Everything below is imported from `pyconfix`.
+
+#### `pyconfix()`
+
+| Method                                                                | What it does                               |
+| --------------------------------------------------------------------- | ------------------------------------------ |
+| `load_schema(schema_files=None)`                                        | Load schema files                          |
+| `apply_config(config_files=None, overlay=None)`                       | Apply saved files, then a dict of values   |
+| `run(output_file=..., show_disabled=False, save_func=None)`           | Open the menu                              |
+| `save(output_file=..., output_diff=False, save_func=None)`            | Save without the menu                      |
+| `include(other, parent=None)`                                         | Add the options of another config          |
+| `add_options(*options, parent=None)`                                  | Add options, or add them to a group        |
+| `action_option(name=None, dependencies=None, needs=None, do_not_cache=False)` | Decorator that adds a task         |
+| `group_option(name, dependencies=None)`                               | Add a group                                |
+| `register_alias(name, option_type, choices=None, default=None, **params)` | Define an alias                        |
+| `option_from_alias(alias_name, name, **kwargs)`                       | Make an option from an alias               |
+| `get(key, default=None)`                                              | Get a value, with a fallback               |
+| `get_option(name)`                                                    | Get the option itself                      |
+| `dump()`                                                              | All values as a dict                       |
+| `diff()`                                                              | Only values that differ from their default |
+| `create_evaluation_session()`                                         | Make a session                             |
+
+* `output_file` defaults to `pyconfix_output_config.json`
+* `load_schema`, `apply_config` and `include` return the config, so you can chain them
+* `apply_config` raises an error if a file is missing
+* `load_schema()` looks for `pyconfixfile`. `load_schema([])` loads nothing
+* `save_func` receives a dict of values
+* `option_from_alias` also takes a built-in type, like `"string"`
+* `config.NAME` reads a value, and `config.NAME()` runs a task
+
+`group_option` returns an object with these methods:
+
+| Method                  | What it does              |
+| ----------------------- | ------------------------- |
+| `add_options(*options)` | Add options to the group  |
+| `action_option(...)`    | Add a task to the group   |
+| `get()`                 | Get the group option      |
+
+#### `ConfigOption`
+
+| Argument       | What it does                                     |
+| -------------- | ------------------------------------------------ |
+| `name`         | The option's name                                |
+| `default`      | The starting value, or a task's function         |
+| `option_type`  | The type. Worked out from the value if left out  |
+| `data`         | Anything you want, for your own use              |
+| `description`  | Shown in the menu with Ctrl+D                    |
+| `dependencies` | A string or function that disables the option    |
+| `options`      | The options inside a group                       |
+| `choices`      | The values of an enum                            |
+| `expanded`     | Shows a group open in the menu                   |
+| `needs`        | A string or function checked before a task runs  |
+| `do_not_cache` | Recompute on every use                           |
+| Anything else  | An argument of a task                            |
+
+An option also has:
+
+| Attribute or method    | What it does                       |
+| ---------------------- | ---------------------------------- |
+| `value`                | The current value                  |
+| `clone_with(**kwargs)` | A copy with some fields changed    |
+| `to_dict()`            | The option's fields as a dict      |
+
+#### `ConfigOptionType`
+
+`BOOL`, `INT`, `STRING`, `ENUM`, `GROUP`, `ACTION` and `EXTERNAL`.
+
+#### Session
+
+| Method or attribute        | What it does                  |
+| -------------------------- | ----------------------------- |
+| `x.NAME`                   | Read a value                  |
+| `x.NAME()`                 | Run a task                    |
+| `x.get(key, default=None)` | Get a value, with a fallback  |
+| `x.get_option(name)`       | Get the option itself         |
+| `x.invalidate_cache()`     | Forget cached results         |
+| `x.config`                 | The config                    |
+
+#### Functions
+
+| Function               | What it does                                                 |
+| ---------------------- | ------------------------------------------------------------ |
+| `find_schema(stem)`    | Find `stem.json`, then `stem.yaml`, then `stem.yml`. Raises if none exist |
+| `shell_action(script)` | Make a task from a script                                    |
+
+## New file formats
+
+Each schema format is one file in `pyconfix/formats/`. Add a file and it is picked up.
 
 ```python
-# conanfile.py
-from conan import ConanFile
-from pyconfix import pyconfix
+extensions = (".toml",)
 
-config = my_script.get_config()
-config.apply_config()
+def available():
+    return True
 
-class MyProject(ConanFile):
-    name = "myproject"
-    version = "1.0"
-
-    # The default options can also be parsed from config.options
-    # but for this example we can just type them in
-    options = {
-        "feature_a": [True, False],
-        "log_level": ["DEBUG", "INFO", "WARN", "ERROR"],
-    }
-    # This could also directly be parsed from config.dump()
-    default_options = {
-        "feature_a": bool(config.ENABLE_FEATURE_A),
-        "log_level": bool(config.LOG_LEVEL),
-    }
+def read(path):
+    ...
 ```
 
-This eliminates the need to sync up the customized settings inside the conanfile and running script.
-You could also just read the config json files directly and this might be less complex, but then the file names needs to stay sync if a custom runner script is used:
+* `extensions` lists the file extensions it handles
+* `available` returns false if a library is missing
+* `read` returns the file as a dict
 
-```python
-# conanfile.py
-from conan import ConanFile
-import os, json
+## Examples
 
-_cfg = {}
-try:
-    with open(os.getenv("CFG", "settings.json")) as f:
-        _cfg = json.load(f)
-except FileNotFoundError:
-    pass
-
-class MyProject(ConanFile):
-    name = "myproject"
-    version = "1.0"
-    options = {
-        "feature_a": [True, False],
-        "log_level": ["DEBUG", "INFO", "WARN", "ERROR"],
-    }
-    default_options = {
-        "feature_a": bool(_cfg.ENABLE_FEATURE_A),
-        "log_level": bool(_cfg.LOG_LEVEL),
-    }
-```
-
-Call it with:
-
-```bash
-python pyconfix.py              # produce settings.json
-CFG=settings.json conan install .
-```
+* __minimal_example.py__: the smallest runner
+* __minimal_yaml_example.py__: the same with a YAML schema
+* __extra_schem.yaml__: tasks, aliases and checks in YAML
+* __example.py__: everything together
 
 ## Roadmap
 
-* Add unit tests + GitHub Actions CI
-* Cache dependency evaluation for massive configs
+* Let scripts read option values
 
-Contributions are welcome – fork, hack, send PRs!
+Contributions are welcome. Fork it and send a PR.
 
 ---
 
-© 2025 Nemesis – MIT License
+© 2026 Nemesis – MIT License

@@ -74,7 +74,7 @@ class EvaluationSession:
     def _execute_action(self, opt):
         self.trace.append(opt.name)
         if not self._needs_met(opt):
-            return None
+            return False
         return self._evaluate(opt, "action", lambda: opt.default(self))
 
     def _is_option_available(self, option):

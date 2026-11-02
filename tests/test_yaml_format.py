@@ -356,7 +356,7 @@ def test_needs_runs_actions_in_order(load, tmp_path):
 
 def test_needs_stops_at_the_first_failure(load, tmp_path):
     cfg = load(CHAIN)
-    assert cfg.STOPS() == (None, ["STOPS", "FAILS"])
+    assert cfg.STOPS() == (False, ["STOPS", "FAILS"])
     assert lines(tmp_path) == ["fails"]
 
 
@@ -368,7 +368,7 @@ def test_needs_or_is_a_fallback(load, tmp_path):
 def test_needs_mixes_values_and_calls(load, tmp_path):
     cfg = load(CHAIN)
     cfg.get_option("SWITCH").value = False
-    assert cfg.BY_VALUE() == (None, ["BY_VALUE"])
+    assert cfg.BY_VALUE() == (False, ["BY_VALUE"])
     assert lines(tmp_path) == []
 
 
@@ -399,7 +399,7 @@ Main:
         type: action
         default: echo ran >> out.txt
 """)
-    assert cfg.WRITE()[0] is None
+    assert cfg.WRITE()[0] is False
     assert lines(tmp_path) == []
 
 
@@ -411,7 +411,7 @@ def test_needs_string_works_in_the_python_api():
     def act(x):
         return 1
 
-    assert cfg.act()[0] is None
+    assert cfg.act()[0] is False
     cfg.get_option("FLAG").value = True
     assert cfg.act()[0] == 1
 

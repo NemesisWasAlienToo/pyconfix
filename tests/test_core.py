@@ -371,7 +371,7 @@ def test_action_needs_gate_blocks_body():
         return 1
 
     value, _ = c.gated()
-    assert value is None
+    assert value is False
     assert calls == []                  # body never ran
 
 

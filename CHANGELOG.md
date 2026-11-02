@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [2.0.0]
 ### Breaking changes
 - load_schem is now load_schema, and schem_files is now schema_files
+- An action with failed needs returns False instead of None
+- pyconfix --run exits with 1 if the task fails, is disabled or doesn't exist
 - Enums hold the choice name instead of the index
 - Setting a value or default of the wrong type raises an error
 - Saved config files with wrong types raise an error

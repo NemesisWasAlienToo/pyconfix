@@ -311,7 +311,7 @@ def test_include_under_a_group_applies_its_dependency():
 
 
 @pytest.mark.parametrize("group_needs, expected", [
-    (lambda x: False, (None, ["act"])),
+    (lambda x: False, (False, ["act"])),
     (lambda x: True, ("ran", ["act"])),
 ])
 def test_group_needs_applies_to_its_actions(group_needs, expected):
@@ -329,7 +329,7 @@ def test_nested_group_needs_applies_to_its_actions():
     core.add_options(group_of(inner, needs=lambda x: False))
     core.add_options(ConfigOption("act", option_type=ConfigOptionType.ACTION,
                                   default=lambda x: "ran"), parent=inner)
-    assert core.act() == (None, ["act"])
+    assert core.act() == (False, ["act"])
 
 
 def needs_chain(setup_passes=True, own_passes=True, do_not_cache=False):
@@ -365,13 +365,13 @@ def test_group_needs_runs_before_the_actions_own_needs():
 
 def test_failing_group_needs_stops_before_the_actions_own_needs():
     core, order = needs_chain(setup_passes=False)
-    assert core.act() == (None, ["act", "setup"])
+    assert core.act() == (False, ["act", "setup"])
     assert order == ["setup"]
 
 
 def test_failing_own_needs_stops_the_action_after_group_needs_passed():
     core, order = needs_chain(own_passes=False)
-    assert core.act() == (None, ["act", "setup"])
+    assert core.act() == (False, ["act", "setup"])
     assert order == ["setup", "own needs"]
 
 

@@ -213,8 +213,11 @@ def main():
         ### Option values can be accessed as attributes.
         ### Actions can then be run by calling them as methods.
         ### Options can also be retrieved using the get method.
+        succeeded = True
         if args.run:
             value, trace = config.get(args.run)()
+            ### A disabled action has an empty trace, and a failed one returns False.
+            succeeded = bool(trace) and value is not False
             if args.value:
                 print(f"Value: {value}")
             if args.trace:
@@ -225,6 +228,8 @@ def main():
         ### In headless mode there is no TUI save step, so persist the result
         ### explicitly. This writes the JSON output file and runs custom_save.
         config.save(default_output_file, save_func=custom_save)
+        if not succeeded:
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

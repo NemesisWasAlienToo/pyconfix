@@ -223,6 +223,177 @@ def test_python_group_action_disabled_with_group():
     assert cfg.act() == (None, [])
 
 
+def group_of(*options, **kwargs):
+    return ConfigOption("G", option_type=ConfigOptionType.GROUP, options=list(options), **kwargs)
+
+
+def test_enabled_group_leaves_child_enabled():
+    cfg = pyconfix()
+    group = cfg.group_option("G", dependencies=lambda x: True)
+    group.add_options(ConfigOption("CHILD", 5))
+    assert cfg.CHILD == 5
+
+
+def test_group_without_dependencies_leaves_child_enabled():
+    cfg = pyconfix()
+    group = cfg.group_option("G")
+    group.add_options(ConfigOption("CHILD", 5, dependencies=lambda x: True))
+    assert cfg.CHILD == 5
+
+
+def test_child_needs_both_group_and_its_own_dependency():
+    core = Core()
+    core.add_options(group_of(ConfigOption("CHILD", 5, dependencies=lambda x: False),
+                              dependencies=lambda x: True))
+    assert core.CHILD is None
+
+
+def test_nested_group_disables_every_level():
+    core = Core()
+    inner = ConfigOption("INNER", option_type=ConfigOptionType.GROUP,
+                         options=[ConfigOption("LEAF", 1)])
+    core.add_options(group_of(inner, dependencies=lambda x: False))
+    assert core.INNER is None
+    assert core.LEAF is None
+
+
+def test_group_stays_a_group_for_its_children_when_enabled_again():
+    flag = ConfigOption("FLAG", False)
+    core = Core()
+    core.add_options(flag, group_of(ConfigOption("CHILD", 5), dependencies=lambda x: x.FLAG))
+    assert core.CHILD is None
+    flag.value = True
+    assert core.CHILD == 5
+
+
+def test_group_predicate_runs_once_per_session():
+    calls = []
+    cfg = pyconfix()
+    group = cfg.group_option("G", dependencies=lambda x: calls.append(1) or True)
+    group.add_options(ConfigOption("A", 1), ConfigOption("B", 2))
+    session = cfg.create_evaluation_session()
+    for name in ("A", "B"):
+        session._is_option_available(cfg.get_option(name))
+    assert len(calls) == 1
+
+
+def test_group_do_not_cache_reruns_predicate():
+    calls = []
+    cfg = pyconfix()
+    core = cfg.core
+    group = ConfigOption("G", option_type=ConfigOptionType.GROUP, options=[],
+                         dependencies=lambda x: calls.append(1) or True, do_not_cache=True)
+    core.add_options(group)
+    core.add_options(ConfigOption("A", 1), ConfigOption("B", 2), parent=group)
+    session = cfg.create_evaluation_session()
+    for name in ("A", "B"):
+        session._is_option_available(cfg.get_option(name))
+    assert len(calls) == 2
+
+
+def test_rejected_add_options_leaves_parent_unset():
+    core = Core()
+    group = group_of()
+    core.add_options(ConfigOption("TAKEN", 1), group)
+    option = ConfigOption("NEW", 1)
+    with pytest.raises(ValueError):
+        core.add_options(option, ConfigOption("TAKEN", 2), parent=group)
+    assert option.parent is None
+
+
+def test_include_under_a_group_applies_its_dependency():
+    other = pyconfix()
+    other.add_options(ConfigOption("CHILD", 5))
+    cfg = pyconfix()
+    group = cfg.group_option("G", dependencies=lambda x: False).get()
+    cfg.include(other, parent=group)
+    assert cfg.CHILD is None
+
+
+@pytest.mark.parametrize("group_needs, expected", [
+    (lambda x: False, (None, ["act"])),
+    (lambda x: True, ("ran", ["act"])),
+])
+def test_group_needs_applies_to_its_actions(group_needs, expected):
+    core = Core()
+    group = group_of(needs=group_needs)
+    core.add_options(group)
+    core.add_options(ConfigOption("act", option_type=ConfigOptionType.ACTION,
+                                  default=lambda x: "ran"), parent=group)
+    assert core.act() == expected
+
+
+def test_nested_group_needs_applies_to_its_actions():
+    core = Core()
+    inner = ConfigOption("INNER", option_type=ConfigOptionType.GROUP, options=[])
+    core.add_options(group_of(inner, needs=lambda x: False))
+    core.add_options(ConfigOption("act", option_type=ConfigOptionType.ACTION,
+                                  default=lambda x: "ran"), parent=inner)
+    assert core.act() == (None, ["act"])
+
+
+def needs_chain(setup_passes=True, own_passes=True, do_not_cache=False):
+    """A group whose needs runs a `setup` action, holding actions `act` and `both`."""
+    order = []
+
+    def step(name, result):
+        return lambda x: order.append(name) or result
+
+    core = Core()
+    core.add_options(ConfigOption("setup", option_type=ConfigOptionType.ACTION,
+                                  default=step("setup", setup_passes), do_not_cache=do_not_cache))
+    group = ConfigOption("G", option_type=ConfigOptionType.GROUP, options=[],
+                         needs=lambda x: x.setup(),
+                         do_not_cache=do_not_cache)
+    core.add_options(group)
+    core.add_options(
+        ConfigOption("act", option_type=ConfigOptionType.ACTION,
+                     default=step("act", "ran"), needs=step("own needs", own_passes)),
+        ConfigOption("both", option_type=ConfigOptionType.ACTION,
+                     default=lambda x: (x.act(), x.other())),
+        ConfigOption("other", option_type=ConfigOptionType.ACTION,
+                     default=step("other", "ran")),
+        parent=group)
+    return core, order
+
+
+def test_group_needs_runs_before_the_actions_own_needs():
+    core, order = needs_chain()
+    assert core.act() == ("ran", ["act", "setup"])
+    assert order == ["setup", "own needs", "act"]
+
+
+def test_failing_group_needs_stops_before_the_actions_own_needs():
+    core, order = needs_chain(setup_passes=False)
+    assert core.act() == (None, ["act", "setup"])
+    assert order == ["setup"]
+
+
+def test_failing_own_needs_stops_the_action_after_group_needs_passed():
+    core, order = needs_chain(own_passes=False)
+    assert core.act() == (None, ["act", "setup"])
+    assert order == ["setup", "own needs"]
+
+
+def test_group_needs_runs_once_for_all_actions_in_a_run():
+    core, order = needs_chain()
+    assert core.both()[0] == ("ran", "ran")
+    assert order.count("setup") == 1
+
+
+def test_group_needs_do_not_cache_reruns_for_each_action():
+    core, order = needs_chain(do_not_cache=True)
+    core.both()
+    assert order.count("setup") == 3      # once each for `both`, `act` and `other`
+
+
+def test_group_needs_runs_again_in_a_new_run():
+    core, order = needs_chain()
+    core.act()
+    core.act()
+    assert order.count("setup") == 2
+
+
 def test_included_group_dependency_cascades(tmp_path, monkeypatch):
     other = pyconfix()
     group = other.group_option("G", dependencies=lambda x: x.HOST_ON)

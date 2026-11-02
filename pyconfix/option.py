@@ -102,6 +102,7 @@ class ConfigOption:
         self.expanded = expanded
         self.needs = needs
         self.do_not_cache = do_not_cache
+        self.parent = None
 
     def _compile_dependencies(self, dependencies):
         """Compile a dependency expression into a ``predicate(x) -> bool``.

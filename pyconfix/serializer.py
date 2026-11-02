@@ -96,7 +96,6 @@ def load_schema(core, schem_files):
     """
     for schem_file in schem_files:
         _load_file(core, os.path.join(os.getcwd(), schem_file))
-    finalize_dependencies(core)
 
 def _load_file(core, path):
     name, parsed = _load_file_options(core, path)
@@ -239,34 +238,6 @@ def _parse_option(core, name, option_data, base_path=None):
         option.options = parse_options(core, option_data['options'], base_path)
 
     return option
-
-
-def finalize_dependencies(core):
-    """Cascade group dependencies/needs down to child options.
-
-    Called once after all schema files have been loaded.
-    """
-    def combine(a, b):
-        if a is None:
-            return b
-        if b is None:
-            return a
-
-        if not callable(a) or not callable(b):
-            raise ValueError("Combining non-callable")
-        return lambda x: a(x) and b(x)
-
-    def cascade_group(options, group_dependencies=None, group_needs=None):
-        for opt in options:
-            if group_dependencies:
-                opt.dependencies = combine(group_dependencies, opt.dependencies)
-            if group_needs:
-                if opt.option_type in [ConfigOptionType.GROUP, ConfigOptionType.ACTION]:
-                    opt.needs = combine(group_needs, opt.needs)
-            if opt.option_type == ConfigOptionType.GROUP:
-                cascade_group(opt.options, opt.dependencies, opt.needs)
-
-    cascade_group(core.options)
 
 
 # --------------------------------------------------------------------------- #

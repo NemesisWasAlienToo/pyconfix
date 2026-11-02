@@ -106,7 +106,6 @@ def test_apply_config_explicit_missing_file_raises(written_schema):
 def _load_dict(core, schema_dict):
     """Build+register options from a plain dict, the way the serializer does."""
     core.add_options(*serializer.parse_options(core, schema_dict))
-    serializer.finalize_dependencies(core)
 
 
 def test_serializer_parses_options_into_core_via_add_options():
@@ -128,7 +127,7 @@ def test_core_apply_config_takes_a_dict():
     assert core.N == 10
 
 
-def test_serializer_finalize_cascades_group_dependency():
+def test_schema_group_dependency_reaches_children():
     core = Core()
     _load_dict(core, {
         "A_BOOL": True,

@@ -65,13 +65,22 @@ class EvaluationSession:
             self.cache[key] = result
         return result
 
+    def _needs_met(self, opt):
+        # A group's needs apply to everything inside it, outermost first.
+        if opt.parent and not self._needs_met(opt.parent):
+            return False
+        return not opt.needs or self._evaluate(opt, "needs", lambda: opt.needs(self))
+
     def _execute_action(self, opt):
         self.trace.append(opt.name)
-        if opt.needs and not self._evaluate(opt, "needs", lambda: opt.needs(self)):
+        if not self._needs_met(opt):
             return None
         return self._evaluate(opt, "action", lambda: opt.default(self))
 
     def _is_option_available(self, option):
+        # A disabled group disables everything inside it.
+        if option.parent and not self._is_option_available(option.parent):
+            return False
         if not option.dependencies: return True
         if not callable(option.dependencies): raise ValueError('Not callable dependencies')
         return self._evaluate(option, "available", lambda: option.dependencies(self))
@@ -181,6 +190,11 @@ class Core:
             claim(option)
 
         self.option_map.update(new_entries)
+        for option in options:
+            option.parent = parent
+        for option in new_entries.values():
+            for child in option.options:
+                child.parent = option
         target = parent.options if parent is not None else self.options
         target.extend(options)
         return options

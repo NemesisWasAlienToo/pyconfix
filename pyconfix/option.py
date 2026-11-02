@@ -17,17 +17,6 @@ class ConfigOptionType(StrEnum):
     GROUP = "group"
     EXTERNAL = "external"
 
-def _enum_choice_exists(config, key):
-    """True if ``key`` names a choice of some ENUM option — used when an enum
-    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
-    key_upper = key.upper()
-    return any(
-        opt.option_type == ConfigOptionType.ENUM
-        and any(choice.upper() == key_upper for choice in opt.choices)
-        for opt in config.option_map.values()
-    )
-
-
 class ConfigOption:
     VALUE_TYPES = {
         ConfigOptionType.BOOL: bool,

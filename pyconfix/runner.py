@@ -71,13 +71,18 @@ class pyconfix:
         through the normal add path, so names are registered/indexed and any
         duplicate raises. Pass ``parent`` (a group option, e.g.
         ``cfg.group_option("db").get()``) to nest the included options under it.
+        Its aliases are added too, and a name that already exists raises.
 
         This is the Python-side counterpart to the JSON ``include`` directive:
         how you obtain ``other`` (import a module and call a builder, read a
         variable, ...) is left entirely to the caller.
         """
         source = other.core if hasattr(other, "core") else other
+        for name in source.aliases:
+            if name in self._core.aliases:
+                raise ValueError(f"Alias '{name}' already exists")
         self._core.add_options(*source.options, parent=parent)
+        self._core.aliases.update(source.aliases)
         return self
 
     # ----------------------------------------------------------------------- #

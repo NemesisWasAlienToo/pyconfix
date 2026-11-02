@@ -314,3 +314,50 @@ def test_alias_param_may_be_called_script(load, tmp_path):
     cfg = load(schema(alias, GO={"type": "run", "script": "echo ok >> out.txt"}))
     cfg.GO()
     assert lines(tmp_path) == ["ok"]
+
+
+def tri_state_config():
+    cfg = pyconfix()
+    cfg.register_alias(name="tri", option_type=ConfigOptionType.ENUM, choices=["A", "B"])
+    return cfg
+
+
+def test_include_imports_aliases():
+    other = tri_state_config()
+    other.add_options(other.option_from_alias("tri", name="OLD"))
+
+    cfg = pyconfix().include(other)
+    cfg.add_options(cfg.option_from_alias("tri", name="NEW", default="B"))
+    assert cfg.OLD == "A"
+    assert cfg.NEW == "B"
+
+
+def test_include_of_a_config_with_only_aliases():
+    cfg = pyconfix().include(tri_state_config())
+    cfg.add_options(cfg.option_from_alias("tri", name="NEW"))
+    assert cfg.NEW == "A"
+
+
+def test_included_aliases_work_in_a_schema(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "s.json").write_text('{"M": {"NEW": {"type": "tri"}}}')
+    assert pyconfix().include(tri_state_config()).load_schema(["s.json"]).NEW == "A"
+
+
+def test_include_refuses_a_duplicate_alias_and_changes_nothing():
+    other = tri_state_config()
+    other.add_options(ConfigOption("OPT", 1))
+    cfg = tri_state_config()
+    with pytest.raises(ValueError, match="already exists"):
+        cfg.include(other)
+    assert cfg.get_option("OPT") is None
+
+
+def test_a_failed_include_adds_no_aliases():
+    other = tri_state_config()
+    other.add_options(ConfigOption("OPT", 1))
+    cfg = pyconfix()
+    cfg.add_options(ConfigOption("OPT", 2))
+    with pytest.raises(ValueError, match="Duplicate"):
+        cfg.include(other)
+    assert cfg.aliases == {}

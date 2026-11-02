@@ -669,6 +669,8 @@ Main Config:
 * An alias can't use the name of a built-in type
 * An alias name can only be registered once
 * Aliases registered in Python work in a schema, if you register them before `load_schema`
+* `include` also brings in aliases, in YAML, JSON and Python
+* In YAML and JSON, put the `include` before the options that use its aliases
 
 ## Expressions
 

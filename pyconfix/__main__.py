@@ -1,15 +1,37 @@
 import argparse
 import os
+import sys
 from ._version import __version__ as VERSION
+from .option import ConfigOptionType
 from .runner import pyconfix
+
+def run_action(config, name, show_value, show_trace):
+    """Run the action ``name`` and return whether it succeeded."""
+    option = config.get_option(name)
+    if option is None or option.option_type != ConfigOptionType.ACTION:
+        print(f"'{name}' is not a task", file=sys.stderr)
+        return False
+    value, trace = config.get(name)()
+    if show_value:
+        print(f"Value: {value}")
+    if show_trace:
+        print(f"Trace: {trace}")
+    # A disabled action never starts, so its trace is empty.
+    if not trace:
+        print(f"Task '{name}' is disabled", file=sys.stderr)
+        return False
+    if value is False:
+        print(f"Task '{name}' failed", file=sys.stderr)
+        return False
+    return True
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Pyconfix configuration runner")
     parser.add_argument(
-        "schem_files",
+        "schema_files",
         metavar="FILE",
         nargs="*",
-        help="Schem file(s). Can provide multiple files; defaults to 'pyconfixfile.json'"
+        help="Schema file(s). Can provide multiple files; defaults to pyconfixfile.json, then pyconfixfile.yaml"
     )
     parser.add_argument(
         "-l", "--load",
@@ -21,6 +43,21 @@ def parse_args():
         "-p", "--print",
         metavar="OPTION",
         help="Prints the value of an option"
+    )
+    parser.add_argument(
+        "-r", "--run",
+        metavar="ACTION",
+        help="Runs an action"
+    )
+    parser.add_argument(
+        "-v", "--value",
+        action="store_true",
+        help="Print the action's return value (used with --run)"
+    )
+    parser.add_argument(
+        "-t", "--trace",
+        action="store_true",
+        help="Print the action execution trace (used with --run)"
     )
     parser.add_argument(
         "--cli",
@@ -66,7 +103,7 @@ def parse_args():
     for key, value in options_dict.items():
         if value.lower() in ["true", "false"]:
             options_dict[key] = value.lower() == "true"
-        elif value.isdigit():
+        elif value.removeprefix('-').isdigit():
             options_dict[key] = int(value)
         else:
             options_dict[key] = value
@@ -84,7 +121,7 @@ def main():
 
     # 1. Build the config and load the schema explicitly.
     config = pyconfix()
-    config.load_schem(schem_files=args.schem_files or ["pyconfixfile.json"])
+    config.load_schema(schema_files=args.schema_files or None)
 
     # 2. Apply saved selections: the cached output file (if present), then any
     #    -l files and -o key=value overrides.
@@ -93,14 +130,17 @@ def main():
     config.apply_config(config_files=args.load or [], overlay=args.option)
 
     # 3. Either run the interactive TUI or answer the headless query.
-    if args.cli or args.print or args.dump:
+    if args.cli or args.print or args.dump or args.run:
+        succeeded = not args.run or run_action(config, args.run, args.value, args.trace)
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
         elif args.dump:
             print(config.dump())
-        else:
-            # Pure CLI mode: persist the applied configuration.
+        elif not args.run:
+            # Pure CLI mode (no query/run): persist the applied configuration.
             config.save(output_file)
+        if not succeeded:
+            sys.exit(1)
     else:
         config.run(output_file=output_file, show_disabled=args.show_disabled)
 

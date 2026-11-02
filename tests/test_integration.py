@@ -3,7 +3,7 @@
 These drive the public ``pyconfix`` runner through the full pipeline (schema
 load -> dependency compile -> config apply -> dump/diff/get/actions) headless,
 i.e. without launching the curses TUI (``run()``). Loading and applying are now
-explicit steps (``load_schem`` / ``apply_config``); the TUI is only started by
+explicit steps (``load_schema`` / ``apply_config``); the TUI is only started by
 ``run()``. They are the integration safety net; per-module behavior is covered in
 test_core / test_separation / test_parser / test_option.
 """
@@ -80,12 +80,12 @@ def make_config(tmp_path, monkeypatch):
             def build(x):
                 return 42
 
-            @cfg.action_option(requires=lambda x: x.build() == 42)
+            @cfg.action_option(needs=lambda x: x.build() == 42)
             def deploy(x):
                 return x.build() + 1
 
         # Loading and applying are explicit, separate steps now.
-        cfg.load_schem(["main.json"])
+        cfg.load_schema(["main.json"])
         cfg.apply_config(config_files=config_files or [], overlay=overlay)
         return cfg
 
@@ -115,11 +115,11 @@ def cfg(make_config):
     ("OS", ConfigOptionType.EXTERNAL),
 ])
 def test_type_inference(cfg, name, expected):
-    assert cfg._get(name).option_type == expected
+    assert cfg.get_option(name).option_type == expected
 
 
 def test_include_pulls_in_options(cfg):
-    opt = cfg._get("EXTRA_FEATURE")
+    opt = cfg.get_option("EXTRA_FEATURE")
     assert opt is not None
     assert opt.option_type == ConfigOptionType.BOOL
 
@@ -134,7 +134,7 @@ def test_too_many_top_level_keys_is_rejected(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
     with pytest.raises(ValueError):
-        cfg.load_schem(["bad.json"])
+        cfg.load_schema(["bad.json"])
 
 
 # --------------------------------------------------------------------------- #
@@ -191,13 +191,13 @@ def test_dump_skips_actions(cfg):
     ("EXTRA_FEATURE", True),
 ])
 def test_availability(cfg, name, available):
-    assert cfg._is_option_available(cfg._get(name)) is available
+    assert cfg._is_option_available(cfg.get_option(name)) is available
 
 
 def test_group_dependency_cascades_to_children(make_config):
     # disabling ENABLE_FEATURE_A should disable GROUP_EXPLICIT's child SUB_A
     cfg = make_config(overlay={"ENABLE_FEATURE_A": False})
-    assert cfg._is_option_available(cfg._get("SUB_A")) is False
+    assert cfg._is_option_available(cfg.get_option("SUB_A")) is False
     assert cfg.dump()["SUB_A"] is None
 
 
@@ -256,10 +256,10 @@ def test_action_top_level_returns_value_and_trace(cfg):
 
 
 def test_execute_action_returns_value_and_trace(cfg):
-    assert cfg._execute_action(cfg._get("build")) == (42, ["build"])
+    assert cfg._execute_action(cfg.get_option("build")) == (42, ["build"])
 
 
-def test_action_with_requires_and_chained_dependency(cfg):
+def test_action_with_needs_and_chained_dependency(cfg):
     value, trace = cfg.deploy()
     assert value == 43
     assert trace[0] == "deploy"

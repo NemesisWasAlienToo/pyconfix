@@ -12,12 +12,104 @@ options, building options from parsed schema data, evaluating dependencies,
 flattening/searching for display, executing actions, applying saved selections
 and dumping/diffing the current configuration.
 
-It knows nothing about files (that is :mod:`serializer`), nothing about the
-terminal (that is :mod:`tui`) and nothing about orchestration (that is
+It knows nothing about files (that is :mod:`schema` and :mod:`serializer`),
+nothing about the terminal (that is :mod:`tui`) and nothing about orchestration (that is
 :mod:`runner`). Those higher layers drive this manager.
 """
 
 from .option import *
+
+def _enum_choice_exists(config, key):
+    """True if ``key`` names a choice of some ENUM option — used when an enum
+    choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
+    return any(
+        opt.option_type == ConfigOptionType.ENUM and key in opt.choices
+        for opt in config.option_map.values()
+    )
+
+class EvaluationSession:
+    """Evaluates dependencies and actions for one top-level call.
+
+    This is what dependency, ``needs`` and action functions receive as ``x``. One
+    session per call means nothing is shared between threads or stored on the
+    core. ``cache`` keeps each option's results for the session, unless the option
+    sets ``do_not_cache``. ``stack`` is the chain being evaluated (popped on
+    return, so a revisit is a real cycle and diamonds are fine).
+    """
+
+    def __init__(self, config):
+        self.config = config
+        self.cache = {}
+        self.stack = {}
+        self.trace = []
+
+    def invalidate_cache(self):
+        """Forget cached results, so the next evaluation sees current values."""
+        self.cache.clear()
+
+    def _evaluate(self, option, kind, compute):
+        # `kind` keeps an option's availability, needs and action result apart.
+        key = (kind, option.name)
+        if not option.do_not_cache and key in self.cache:
+            return self.cache[key]
+        if key in self.stack:
+            names = [name for _, name in self.stack]
+            names = names[list(self.stack).index(key):] + [option.name]
+            # ValueError, not AttributeError: this runs inside __getattr__, where
+            # an AttributeError would be swallowed by get()/hasattr().
+            raise ValueError(f"Dependency cycle detected: {' -> '.join(names)}")
+        self.stack[key] = True
+        result = compute()
+        self.stack.pop(key)
+        if not option.do_not_cache:
+            self.cache[key] = result
+        return result
+
+    def _needs_met(self, opt):
+        # A group's needs apply to everything inside it, outermost first.
+        if opt.parent and not self._needs_met(opt.parent):
+            return False
+        return not opt.needs or self._evaluate(opt, "needs", lambda: opt.needs(self))
+
+    def _execute_action(self, opt):
+        self.trace.append(opt.name)
+        if not self._needs_met(opt):
+            return False
+        return self._evaluate(opt, "action", lambda: opt.default(self))
+
+    def _is_option_available(self, option):
+        # A disabled group disables everything inside it.
+        if option.parent and not self._is_option_available(option.parent):
+            return False
+        if not option.dependencies: return True
+        if not callable(option.dependencies): raise ValueError('Not callable dependencies')
+        return self._evaluate(option, "available", lambda: option.dependencies(self))
+
+    def get_option(self, name):
+        return self.config.get_option(name)
+
+    def get(self, key, default=None):
+        """Get an option's value by its name, or ``default`` for an unknown key."""
+        try:
+            return self.__getattr__(key)
+        except AttributeError:
+            return default
+
+    def __getattr__(self, name):
+        opt = self.config.get_option(name)
+        if opt is None:
+            if _enum_choice_exists(self.config, name):
+                return name
+            raise AttributeError(f"Invalid key: '{name}'")
+        if not self._is_option_available(opt):
+            if opt.option_type == ConfigOptionType.ACTION:
+                return lambda: None
+            return None
+        if opt.option_type == ConfigOptionType.ACTION:
+            return lambda: self._execute_action(opt)
+        elif opt.option_type == ConfigOptionType.GROUP:
+            return opt.options
+        return opt.value
 
 
 class Core:
@@ -32,8 +124,10 @@ class Core:
 
     def _register_alias(self, alias_option: ConfigOption, skip_duplicate_check=False):
         """Register an alias and guard against accidental duplicates."""
-        if alias_option.option_type != ConfigOptionType.ENUM:
-            raise ValueError("Only ENUM aliases are supported for now")
+        if alias_option.option_type not in (ConfigOptionType.ENUM, ConfigOptionType.ACTION):
+            raise ValueError("Only ENUM and ACTION aliases are supported for now")
+        if alias_option.name in list(ConfigOptionType):
+            raise ValueError(f"Alias '{alias_option.name}' has the name of a built-in type")
 
         existing = self.aliases.get(alias_option.name)
         if existing:
@@ -44,23 +138,28 @@ class Core:
         self.aliases[alias_option.name] = alias_option
         return alias_option
 
-    def register_alias(self, name, option_type, choices):
+    def register_alias(self, name, option_type, choices=None, default=None, **params):
         """
-        Register an alias type that can be reused when defining options. Currently only ENUM aliases are supported.
+        Register an alias type that can be reused when defining options. ENUM aliases
+        take ``choices``. ACTION aliases take a ``default`` body, and any other keyword
+        is a default value for an argument of that body.
         """
         alias_option = ConfigOption(
             name=name,
             option_type=option_type,
             choices=choices,
+            default=default,
+            **params,
         )
         return self._register_alias(alias_option)
 
-    def option_from_alias(self, alias_name, **kwargs):
+    def option_from_alias(self, alias_name, name=None, **kwargs):
         """
         Create a ConfigOption from a registered alias without mutating config.options.
         """
-        if 'name' not in kwargs:
+        if name is None:
             raise ValueError("You must provide a 'name' parameter when creating an option from an alias")
+        kwargs['name'] = name
         custom_type = self.aliases.get(alias_name)
         if custom_type is None:
             try:
@@ -102,6 +201,11 @@ class Core:
             claim(option)
 
         self.option_map.update(new_entries)
+        for option in options:
+            option.parent = parent
+        for option in new_entries.values():
+            for child in option.options:
+                child.parent = option
         target = parent.options if parent is not None else self.options
         target.extend(options)
         return options
@@ -110,30 +214,29 @@ class Core:
         for option in options:
             if option.option_type == ConfigOptionType.GROUP:
                 self._apply_config_to_options(option.options, saved_config)
+            elif option.option_type == ConfigOptionType.EXTERNAL:
+                continue
             elif option.name in saved_config:
                 value = saved_config[option.name]
-                if option.option_type == ConfigOptionType.ENUM:
-                    # A saved config file is user-facing and may be stale. An
-                    # empty/blank value restores the default; any other value
-                    # that is not a valid choice is a real error, so raise a
-                    # clear, named message instead of a bare "not in list".
-                    choice = value if value else option.default
-                    if choice not in option.choices:
-                        raise ValueError(
-                            f"Invalid value '{value}' for enum option '{option.name}'; "
-                            f"expected one of {option.choices}"
-                        )
-                    option.value = option.choices.index(choice)
-                else:
-                    option.value = value
+                # A saved config file may be stale: a blank enum restores the default.
+                if option.option_type == ConfigOptionType.ENUM and not value:
+                    value = option.default
+                option.value = value
+
+    def create_evaluation_session(self):
+        """Create a session for evaluating options against the current values.
+
+        Cached results live as long as the session, so sharing one across
+        several checks (a whole TUI redraw, say) evaluates each option once.
+        Create a new session after any value changes, or it keeps returning the
+        old answers. Options with ``do_not_cache`` are always recomputed.
+
+        A session is not thread-safe; use one per thread.
+        """
+        return EvaluationSession(self)
 
     def _is_option_available(self, option):
-        def _is_option_available_impl(option, root):
-            if not option.dependencies:
-                return True
-            if not callable(option.dependencies): raise ValueError('Not callable dependencies')
-            return option.dependencies(self)
-        return _is_option_available_impl(option, option.name)
+        return self.create_evaluation_session()._is_option_available(option)
 
     def _sync_option_value(self, option, available):
         """Keep an option's value in sync with its availability.
@@ -146,45 +249,11 @@ class Core:
             if option.option_type != ConfigOptionType.GROUP:
                 option.value = None
         elif option.value is None:
-            option.value = option.choices.index(option.default) if option.option_type == ConfigOptionType.ENUM else option.default
+            option.value = option.default
 
     def _execute_action(self, option):
-        trace = []
-        class ExecutionSession:
-            def __init__(self, config, root):
-                self.config = config
-                self.cache = {}
-                self.root = root
-
-            def _execute_action(self, opt):
-                trace.append(opt.name)
-                if opt.requires and not opt.requires(self):
-                    return None
-                if opt.name in self.cache:
-                    return self.cache[opt.name]
-                value = opt.default(self)
-                self.cache[opt.name] = value
-                return value
-
-            def __getattr__(self, name):
-                if name == self.root:
-                    raise AttributeError(f"Cycle detected: '{name}'")
-                opt = self.config._get(name)
-                if opt is None:
-                    raise AttributeError(f"Invalid key: '{name}'")
-                if not self.config._is_option_available(opt):
-                    if opt.option_type == ConfigOptionType.ACTION:
-                        return lambda: None
-                    return None
-                if opt.option_type == ConfigOptionType.ENUM:
-                    return opt.choices[opt.value] if opt.value is not None else None
-                elif opt.option_type == ConfigOptionType.ACTION:
-                    return lambda: self._execute_action(opt)
-                elif opt.option_type == ConfigOptionType.GROUP:
-                    return opt.options
-                return opt.value
-
-        return ExecutionSession(self, option.name)._execute_action(option), trace
+        session = self.create_evaluation_session()
+        return session._execute_action(option), session.trace
 
     def _dump(self, options):
         config_data = {}
@@ -197,35 +266,25 @@ class Core:
                     nested_data = {nested_key: None for nested_key in nested_data}
                 config_data.update(nested_data)
             else:
-                # option.default is the choice string for enums, so this emits a
-                # string for the disabled/None path just like the active path below.
-                default_value = option.default
-                value_to_save = default_value if option.value is None else (
-                    option.choices[option.value] if option.option_type == ConfigOptionType.ENUM
-                    else option.value)
+                value_to_save = option.default if option.value is None else option.value
                 config_data[option.name] = None if not self._is_option_available(option) else value_to_save
         return config_data
 
     def __getattr__(self, name):
-        opt = self._get(name)
+        opt = self.get_option(name)
         if opt is None:
+            if _enum_choice_exists(self, name):
+                return name
             raise AttributeError(f"Invalid key: '{name}'")
         if not self._is_option_available(opt):
             if opt.option_type == ConfigOptionType.ACTION:
                 return lambda : (None, [])
             return None
-        if opt.option_type == ConfigOptionType.ENUM:
-            return opt.choices[opt.value] if opt.value is not None else None
-        elif opt.option_type == ConfigOptionType.ACTION:
+        if opt.option_type == ConfigOptionType.ACTION:
             return lambda : self._execute_action(opt)
         elif opt.option_type == ConfigOptionType.GROUP:
             return opt.options
         return opt.value
-
-    def _get(self, key):
-        # O(1) lookup via the name index, which holds every option (top-level
-        # and nested group children) registered on this manager.
-        return self.option_map.get(key.upper())
 
     # ----------------------------------------------------------------------- #
     # Applying selections and producing output data
@@ -256,14 +315,20 @@ class Core:
             # instead of recomputing availability for every key.
             if value is None:
                 continue
-            opt = self._get(key)
+            opt = self.get_option(key)
             if value != opt.default:
                 diff[key] = value
         return diff
 
-    def get(self, key, default=None):
+    def get_option(self, name):
         """
         Get an option by its name.
+        """
+        return self.option_map.get(name.upper())
+
+    def get(self, key, default=None):
+        """
+        Get an option's value by its name.
 
         Unknown keys should behave like a safe lookup and return the provided
         fallback value instead of raising an AttributeError.

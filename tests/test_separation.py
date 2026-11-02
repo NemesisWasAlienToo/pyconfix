@@ -6,13 +6,14 @@ data, runner composition/forwarding, and the curses-free headless guarantee.
 """
 
 import json
+import os
 import subprocess
 import sys
 import textwrap
 
 import pytest
 
-from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType, serializer
+from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType, schema, serializer
 
 
 SCHEMA = {
@@ -41,19 +42,96 @@ def test_serializer_json_roundtrip(tmp_path):
     assert serializer.read(str(p)) == {"a": 1, "b": "two"}
 
 
-def test_register_custom_format(tmp_path, monkeypatch):
-    class UpperJson(serializer.JsonFormat):
-        extensions = (".weird",)
-        def read(self, path):
-            with open(path) as f:
-                return {"READ_BY": "weird", **json.load(f)}
+class FakeFormat:
+    """Stands in for a new module in pyconfix/formats: JSON on disk, its own extension."""
+    extensions = (".fake",)
 
-    # don't leak the registration into other tests
-    monkeypatch.setattr(serializer, "_FORMATS", list(serializer._FORMATS))
-    serializer.register_format(UpperJson())
-    p = tmp_path / "cfg.weird"
+    @staticmethod
+    def available():
+        return True
+
+    @staticmethod
+    def read(path):
+        with open(path) as f:
+            return json.load(f)
+
+
+@pytest.fixture
+def fake_format(monkeypatch):
+    monkeypatch.setattr(serializer, "FORMATS", [*serializer.FORMATS, FakeFormat])
+
+
+def test_format_module_reads_its_extension(tmp_path, fake_format):
+    p = tmp_path / "cfg.fake"
     p.write_text(json.dumps({"k": 1}))
-    assert serializer.read(str(p)) == {"READ_BY": "weird", "k": 1}
+    assert serializer.read(str(p)) == {"k": 1}
+
+
+def test_formats_are_discovered_with_json_first():
+    assert [fmt.__name__.rsplit(".", 1)[1] for fmt in serializer.FORMATS] == ["json_format", "yaml_format"]
+
+
+def test_every_format_has_the_expected_shape():
+    for fmt in serializer.FORMATS:
+        assert fmt.extensions and callable(fmt.read) and callable(fmt.available)
+
+
+def test_formats_package_is_installed():
+    setup = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "setup.py")
+    with open(setup) as f:
+        assert '"pyconfix.formats"' in f.read()
+
+
+def test_write_is_always_json(tmp_path):
+    p = tmp_path / "cfg.yaml"
+    serializer.write(str(p), {"k": 1})
+    assert json.loads(p.read_text()) == {"k": 1}
+
+
+def test_schema_loads_from_a_new_format(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "schema.fake").write_text(json.dumps({"S": {"N": 5}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["schema.fake"])
+    assert cfg.config_name == "S"
+    assert cfg.N == 5
+
+
+def test_schema_include_can_mix_formats(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "other.fake").write_text(json.dumps({"O": {"FROM_FAKE": 1}}))
+    (tmp_path / "other.json").write_text(json.dumps({"O": {"FROM_JSON": 2}}))
+    (tmp_path / "main.fake").write_text(json.dumps(
+        {"S": {"include": ["other.fake", "other.json"]}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["main.fake"])
+    assert (cfg.FROM_FAKE, cfg.FROM_JSON) == (1, 2)
+
+
+def test_config_saves_as_json_whatever_the_schema_format(tmp_path, monkeypatch, fake_format):
+    (tmp_path / "schema.fake").write_text(json.dumps({"S": {"N": 5}}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["schema.fake"])
+    cfg.save("out.json")
+    assert json.loads((tmp_path / "out.json").read_text()) == {"N": 5}
+
+
+@pytest.mark.parametrize("content", [[1, 2], {}, {"A": {}, "B": {}}, {"A": 5}, {"A": None}, {"A": [1]}])
+def test_schema_file_of_the_wrong_shape_raises_value_error(tmp_path, monkeypatch, content):
+    (tmp_path / "schema.json").write_text(json.dumps(content))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="schema.json"):
+        pyconfix().load_schema(["schema.json"])
+
+
+def test_malformed_schema_file_raises_value_error(tmp_path, monkeypatch):
+    (tmp_path / "bad.json").write_text("{nope")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="bad.json"):
+        pyconfix().load_schema(["bad.json"])
+
+
+def test_serializer_knows_nothing_about_options():
+    assert not hasattr(serializer, "ConfigOption")
+    assert not hasattr(serializer, "parse_options")
 
 
 def test_unknown_extension_falls_back_to_json(tmp_path):
@@ -65,7 +143,7 @@ def test_unknown_extension_falls_back_to_json(tmp_path):
 def test_parse_unknown_type_raises():
     core = Core()
     with pytest.raises(ValueError):
-        serializer.parse_options(core, {"X": {"type": "bogus"}})
+        schema.parse_options(core, {"X": {"type": "bogus"}})
 
 
 def test_read_config_files_merges_in_order(tmp_path):
@@ -82,11 +160,11 @@ def test_read_config_files_missing_raises():
 
 
 def test_apply_config_with_missing_default_falls_back_to_defaults(written_schema):
-    # pyconfix().load_schem().apply_config() must not crash when the default
+    # pyconfix().load_schema().apply_config() must not crash when the default
     # pyconfix_output_config.json does not exist yet (fresh checkout) — the default is
     # loaded only if present.
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     cfg.apply_config()               # default config file is absent -> skipped
     assert cfg.AN_INT == 7           # schema default
 
@@ -94,7 +172,7 @@ def test_apply_config_with_missing_default_falls_back_to_defaults(written_schema
 def test_apply_config_explicit_missing_file_raises(written_schema):
     # An explicitly named config file, however, must exist.
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     with pytest.raises(ValueError):
         cfg.apply_config(config_files=["does_not_exist.json"])
 
@@ -105,17 +183,16 @@ def test_apply_config_explicit_missing_file_raises(written_schema):
 
 def _load_dict(core, schema_dict):
     """Build+register options from a plain dict, the way the serializer does."""
-    core.add_options(*serializer.parse_options(core, schema_dict))
-    serializer.finalize_dependencies(core)
+    core.add_options(*schema.parse_options(core, schema_dict))
 
 
 def test_serializer_parses_options_into_core_via_add_options():
     core = Core()
     _load_dict(core, {"A": True, "N": {"type": "int", "default": 5},
                       "E": {"choices": ["x", "y"]}})
-    assert core._get("A").option_type == ConfigOptionType.BOOL
-    assert core._get("N").value == 5
-    assert core._get("E").option_type == ConfigOptionType.ENUM
+    assert core.get_option("A").option_type == ConfigOptionType.BOOL
+    assert core.get_option("N").value == 5
+    assert core.get_option("E").option_type == ConfigOptionType.ENUM
 
 
 def test_core_apply_config_takes_a_dict():
@@ -128,14 +205,14 @@ def test_core_apply_config_takes_a_dict():
     assert core.N == 10
 
 
-def test_serializer_finalize_cascades_group_dependency():
+def test_schema_group_dependency_reaches_children():
     core = Core()
     _load_dict(core, {
         "A_BOOL": True,
         "G": {"type": "group", "dependencies": "A_BOOL", "options": {"CHILD": False}},
     })
     core.apply_config({"A_BOOL": False})
-    assert core._is_option_available(core._get("CHILD")) is False
+    assert core._is_option_available(core.get_option("CHILD")) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -147,23 +224,23 @@ def test_runner_forwards_option_access_to_core():
     assert isinstance(cfg.core, Core)
     # option methods/attrs resolve through to the core
     cfg.add_options(ConfigOption(name="X", option_type=ConfigOptionType.BOOL, default=True))
-    assert cfg._get("X") is not None
+    assert cfg.get_option("X") is not None
     assert cfg.options is cfg.core.options
 
 
 def test_runner_load_and_apply_headless(written_schema):
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     cfg.apply_config(config_files=[], overlay={"AN_INT": 42})
     assert cfg.config_name == "Sep"
     assert cfg.AN_INT == 42
-    assert cfg._is_option_available(cfg._get("GATED")) is True
+    assert cfg._is_option_available(cfg.get_option("GATED")) is True
 
 
 def test_runner_apply_config_overlay_beats_file(written_schema):
     (written_schema / "saved.json").write_text(json.dumps({"AN_INT": 5}))
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     cfg.apply_config(config_files=["saved.json"], overlay={"AN_INT": 99})
     assert cfg.AN_INT == 99             # overlay wins over the saved file
 
@@ -174,14 +251,14 @@ def test_load_schem_reports_multiple_top_entries(tmp_path, monkeypatch):
     cfg = pyconfix()
     # The library must raise (catchable), never sys.exit the host process.
     with pytest.raises(ValueError):
-        cfg.load_schem(["bad.json"])
+        cfg.load_schema(["bad.json"])
 
 
 def test_load_schem_missing_file_raises_not_exits():
     # A missing schema file is a catchable error, not a process-killing sys.exit.
     cfg = pyconfix()
     with pytest.raises(ValueError):
-        cfg.load_schem(["definitely_missing_schema.json"])
+        cfg.load_schema(["definitely_missing_schema.json"])
 
 
 def test_read_config_files_corrupt_json_raises_not_exits(tmp_path):
@@ -194,7 +271,7 @@ def test_read_config_files_corrupt_json_raises_not_exits(tmp_path):
 
 def test_runner_save_writes_file_and_calls_hook(written_schema):
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     out = str(written_schema / "out.json")
 
     seen = {}
@@ -208,7 +285,7 @@ def test_runner_save_writes_file_and_calls_hook(written_schema):
 
 def test_runner_save_diff_only(written_schema):
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     cfg.apply_config(config_files=[], overlay={"AN_INT": 42})
     out = str(written_schema / "out.json")
     assert cfg.save(out, output_diff=True) == {"AN_INT": 42}
@@ -218,7 +295,7 @@ def test_load_schem_loads_the_tree_once(written_schema):
     # Loading is an explicit one-shot step; a single call registers each option
     # exactly once (run() no longer re-loads the schema).
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     names = [o.name for o in cfg.options]
     assert names == list(dict.fromkeys(names)), f"duplicated options: {names}"
     assert set(names) == {"A_BOOL", "AN_INT", "GATED"}
@@ -228,9 +305,9 @@ def test_load_schem_twice_raises_on_duplicate(written_schema):
     # Names are globally unique; loading the same schema again re-registers
     # already-known names, which add_options rejects.
     cfg = pyconfix()
-    cfg.load_schem(["sep.json"])
+    cfg.load_schema(["sep.json"])
     with pytest.raises(ValueError):
-        cfg.load_schem(["sep.json"])
+        cfg.load_schema(["sep.json"])
 
 
 # --------------------------------------------------------------------------- #
@@ -244,8 +321,8 @@ def test_runner_action_option_registers_on_core():
     def build(x):
         return "built"
 
-    assert cfg._get("build").option_type == ConfigOptionType.ACTION
-    assert cfg.core._get("build") is not None      # lives on the underlying core
+    assert cfg.get_option("build").option_type == ConfigOptionType.ACTION
+    assert cfg.core.get_option("build") is not None      # lives on the underlying core
     assert cfg.build() == ("built", ["build"])
 
 
@@ -259,7 +336,7 @@ def test_runner_group_option_and_grouped_action():
     def ship(x):
         return "shipped"
 
-    assert cfg._get("ship").option_type == ConfigOptionType.ACTION
+    assert cfg.get_option("ship").option_type == ConfigOptionType.ACTION
     # the action was registered inside the group, not at top level
     assert any(o.name == "ship" for o in proxy.get().options)
 
@@ -316,6 +393,68 @@ def test_decorator_name_collides_with_add_options():
 
 
 # --------------------------------------------------------------------------- #
+# runner.include: merge another config's options (Python-side 'include')
+# --------------------------------------------------------------------------- #
+
+def _sub_config():
+    sub = pyconfix()
+    sub.add_options(ConfigOption(name="DB_HOST", option_type=ConfigOptionType.STRING,
+                                 default="localhost"))
+
+    @sub.action_option(dependencies=lambda x: x.DB_HOST)
+    def migrate(x):
+        return f"migrating {x.DB_HOST}"
+
+    return sub
+
+
+def test_include_merges_options_at_top_level():
+    root = pyconfix()
+    root.add_options(ConfigOption(name="APP", option_type=ConfigOptionType.STRING, default="svc"))
+    root.include(_sub_config())
+    assert root.get_option("DB_HOST") is not None
+    assert "DB_HOST" in [o.name for o in root.core.options]     # top-level
+
+
+def test_include_action_resolves_against_including_config():
+    # An action authored in the sub-config runs against the including config's
+    # session, so its `x.DB_HOST` resolves through the merged tree.
+    root = pyconfix()
+    root.include(_sub_config())
+    value, _ = root.migrate()
+    assert value == "migrating localhost"
+
+
+def test_include_under_parent_group_nests_and_indexes():
+    root = pyconfix()
+    group = root.group_option("database").get()
+    root.include(_sub_config(), parent=group)
+    assert any(o.name == "DB_HOST" for o in root.get_option("database").options)
+    assert "DB_HOST" not in [o.name for o in root.core.options]  # not top-level
+    assert root.get_option("DB_HOST") is not None                      # still indexed
+
+
+def test_include_duplicate_name_raises():
+    root = pyconfix()
+    root.add_options(ConfigOption(name="DB_HOST", option_type=ConfigOptionType.STRING, default="x"))
+    with pytest.raises(ValueError):
+        root.include(_sub_config())
+
+
+def test_include_is_chainable():
+    root = pyconfix()
+    assert root.include(_sub_config()) is root
+
+
+def test_include_accepts_bare_core():
+    root = pyconfix()
+    core = Core()
+    core.add_options(ConfigOption(name="RAW", option_type=ConfigOptionType.BOOL, default=True))
+    root.include(core)
+    assert root.get_option("RAW") is not None
+
+
+# --------------------------------------------------------------------------- #
 # serializer: 'include' resolution (top-level and nested inside a group)
 # --------------------------------------------------------------------------- #
 
@@ -329,11 +468,11 @@ def test_nested_group_include_is_loaded(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     cfg = pyconfix()
-    cfg.load_schem(["main.json"])
+    cfg.load_schema(["main.json"])
 
-    assert cfg._get("CHILD") is not None
-    assert cfg._get("NESTED_INCLUDED") is not None
-    assert cfg._get("NESTED_INCLUDED").option_type == ConfigOptionType.BOOL
+    assert cfg.get_option("CHILD") is not None
+    assert cfg.get_option("NESTED_INCLUDED") is not None
+    assert cfg.get_option("NESTED_INCLUDED").option_type == ConfigOptionType.BOOL
 
 
 def test_top_level_include_is_loaded(tmp_path, monkeypatch):
@@ -345,8 +484,8 @@ def test_top_level_include_is_loaded(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     cfg = pyconfix()
-    cfg.load_schem(["main.json"])
-    assert cfg._get("Y") is not None
+    cfg.load_schema(["main.json"])
+    assert cfg.get_option("Y") is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -354,24 +493,24 @@ def test_top_level_include_is_loaded(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_schema_enum_out_of_range_default_is_coerced():
-    opts = serializer.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})
+    opts = schema.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})
     e = opts[0]
     assert e.option_type == ConfigOptionType.ENUM
     assert e.default == "A"          # coerced to first choice, like ConfigOption does
-    assert e.value == 0
+    assert e.value == "A"
 
 
 def test_schema_enum_valid_default_unaffected():
-    opts = serializer.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "B"}})
+    opts = schema.parse_options(Core(), {"E": {"choices": ["A", "B"], "default": "B"}})
     e = opts[0]
     assert e.default == "B"
-    assert e.value == 1
+    assert e.value == "B"
 
 
 def test_schema_enum_matches_direct_configoption_coercion():
     direct = ConfigOption(name="E", option_type=ConfigOptionType.ENUM,
                           choices=["A", "B"], default="ZZZ")
-    via_schema = serializer.parse_options(
+    via_schema = schema.parse_options(
         Core(), {"E": {"choices": ["A", "B"], "default": "ZZZ"}})[0]
     assert (direct.default, direct.value) == (via_schema.default, via_schema.value)
 
@@ -383,15 +522,15 @@ def test_schema_enum_matches_direct_configoption_coercion():
 def test_field_alias_deps_maps_to_dependencies():
     core = Core()
     _load_dict(core, {"A": True, "N": {"type": "int", "default": 5, "deps": "A"}})
-    n = core._get("N")
+    n = core.get_option("N")
     assert callable(n.dependencies)                 # compiled from the expression
     assert core._is_option_available(n) is True     # A is True
-    core._get("A").value = False
+    core.get_option("A").value = False
     assert core._is_option_available(n) is False
 
 
 def test_field_aliases_def_desc_opts():
-    opts = serializer.parse_options(Core(), {
+    opts = schema.parse_options(Core(), {
         "N": {"type": "int", "def": 7, "desc": "count"},
         "G": {"opts": {"CHILD": True}},
     })
@@ -404,21 +543,21 @@ def test_field_aliases_def_desc_opts():
 
 def test_field_alias_conflicts_with_canonical_raises():
     with pytest.raises(ValueError):
-        serializer.parse_options(
+        schema.parse_options(
             Core(), {"N": {"type": "int", "default": 1, "deps": "A", "dependencies": "B"}})
 
 
 def test_field_alias_matches_canonical_result():
-    aliased = serializer.parse_options(
+    aliased = schema.parse_options(
         Core(), {"N": {"type": "int", "def": 3, "desc": "d", "deps": "true"}})[0]
-    canonical = serializer.parse_options(
+    canonical = schema.parse_options(
         Core(), {"N": {"type": "int", "default": 3, "description": "d", "dependencies": "true"}})[0]
     assert aliased.default == canonical.default
     assert aliased.description == canonical.description
 
 
 # --------------------------------------------------------------------------- #
-# reserved field names + requires is Python-API only in the JSON schema
+# reserved field names and needs in the schema
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("reserved", [
@@ -427,25 +566,25 @@ def test_field_alias_matches_canonical_result():
 ])
 def test_reserved_field_name_rejected_as_option_name(reserved):
     with pytest.raises(ValueError):
-        serializer.parse_options(Core(), {reserved: True})
+        schema.parse_options(Core(), {reserved: True})
 
 
 def test_reserved_field_name_rejected_when_nested_in_group():
     with pytest.raises(ValueError):
-        serializer.parse_options(
+        schema.parse_options(
             Core(), {"G": {"type": "group", "options": {"deps": True}}})
 
 
 def test_uppercase_reserved_word_is_allowed_as_option_name():
     # Only the exact lowercase field keys are reserved; a distinct name is fine.
-    opts = serializer.parse_options(Core(), {"TYPE": True, "DATA": 5})
+    opts = schema.parse_options(Core(), {"TYPE": True, "DATA": 5})
     assert {o.name for o in opts} == {"TYPE", "DATA"}
 
 
-def test_requires_in_json_schema_raises_clear_error():
-    with pytest.raises(ValueError, match="Python API"):
-        serializer.parse_options(
-            Core(), {"ACT": {"type": "group", "options": {"X": True}, "requires": "A"}})
+def test_needs_in_schema_is_compiled():
+    option = schema.parse_options(
+        Core(), {"ACT": {"type": "group", "options": {"X": True}, "needs": "A"}})[0]
+    assert callable(option.needs)
 
 
 # --------------------------------------------------------------------------- #
@@ -460,7 +599,7 @@ def test_headless_path_never_imports_curses(tmp_path):
         import pyconfix.core, pyconfix.serializer, pyconfix.runner
         from pyconfix import pyconfix as P
         cfg = P()
-        cfg.load_schem(['sep.json'])          # load + apply, no TUI
+        cfg.load_schema(['sep.json'])          # load + apply, no TUI
         cfg.apply_config(config_files=[])
         print(cfg.dump()['AN_INT'])
     """)

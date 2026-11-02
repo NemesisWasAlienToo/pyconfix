@@ -1,5 +1,6 @@
-import time, argparse, sys, os
-from pyconfix import pyconfix, ConfigOption, ConfigOptionType
+import time, argparse, sys, os, shutil
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema, shell_action
+from database_module import create_database_module
 import platform
 
 ### This function saves the current configurations in a defconfig-like format.
@@ -26,10 +27,31 @@ def create_config():
         choices=["INTEGRATED", "MODULE", "DISABLED"]
     )
 
+    ### Action aliases are reusable actions. Any extra keyword on an option using one
+    ### is an argument, which a shell script reads as an environment variable.
+    config.register_alias(
+        name='debian-container',
+        option_type=ConfigOptionType.ACTION,
+        default=shell_action('docker run --rm -e script debian:stable-slim sh -c "$script"')
+    )
+
     ### Config options can be added using helpers or plain ConfigOption objects
     config.add_options(
         config.option_from_alias('tri-state', name='NEW_MODULE_TRI_STATE_FROM_PYTHON'),
         config.option_from_alias('string', name='STRING_FROM_ALIAS', default='Default string value'),
+        ConfigOption(
+            name='HAS_DOCKER',
+            option_type=ConfigOptionType.EXTERNAL,
+            default=shutil.which('docker') is not None
+        ),
+        config.option_from_alias(
+            'debian-container',
+            name='PYTHON_DEBIAN',
+            dependencies=lambda x: x.HAS_DOCKER,
+            script='echo "Hello from $(head -1 /etc/os-release)"; sleep 2'
+        ),
+        ### The type is deduced from the value, so name + default is enough.
+        ConfigOption('MAX_THREADS', 4),
         ConfigOption(
             name='OS',
             option_type=ConfigOptionType.EXTERNAL,
@@ -44,8 +66,8 @@ def create_config():
 
     ### Actions can also be added using a decorator for ease
     @config.action_option(
-        requires=lambda x: x.LOG_LEVEL, 
-        dependencies=lambda x: x.ENABLE_FEATURE_A,
+        needs=lambda x: x.LOG_LEVEL, 
+        dependencies=lambda x: x.ENABLE_FEATURE_A and x.NEW_MODULE_TRI_STATE_FROM_PYTHON == x.DISABLED,
     )
     def build(x):
         print("Building...")
@@ -67,7 +89,7 @@ def create_config():
 
     # Then use the group's action_option decorator to add actions easier
     @deployment_group_proxy.action_option(
-        requires=lambda x: x.build(),
+        needs=lambda x: x.build(),
         dependencies=lambda x: x.ENABLE_FEATURE_A
     )
     def deploy(x):
@@ -76,14 +98,20 @@ def create_config():
         return True
     
     @config.action_option(
-        requires=lambda x: x.deploy(),
+        needs=lambda x: x.deploy(),
     )
     def test(x):
         print("Testing...")
         time.sleep(2)
         return True
-    
-    config.load_schem(schem_files=["schem.json"])
+
+    ### Options and actions can be split across files/modules and pulled together
+    ### with include(). Here the database module (imported from database_module.py)
+    ### is nested under its own group.
+    database_group = config.group_option("database").get()
+    config.include(create_database_module(), parent=database_group)
+
+    config.load_schema(schema_files=[find_schema("schem")])
     return config
 
 def parse_args():
@@ -99,6 +127,16 @@ def parse_args():
         "-r", "--run",
         metavar="ACTION",
         help="Runs an action"
+    )
+    parser.add_argument(
+        "-v", "--value",
+        action="store_true",
+        help="Print the action's return value (used with --run)"
+    )
+    parser.add_argument(
+        "-t", "--trace",
+        action="store_true",
+        help="Print the action execution trace (used with --run)"
     )
     parser.add_argument(
         "-p", "--print",
@@ -138,7 +176,7 @@ def parse_args():
     for key, value in options_dict.items():
         if value.lower() in ["true", "false"]:
             options_dict[key] = value.lower() == "true"
-        elif value.isdigit():
+        elif value.removeprefix('-').isdigit():
             options_dict[key] = int(value)
         else:
             options_dict[key] = value
@@ -175,16 +213,23 @@ def main():
         ### Option values can be accessed as attributes.
         ### Actions can then be run by calling them as methods.
         ### Options can also be retrieved using the get method.
+        succeeded = True
         if args.run:
             value, trace = config.get(args.run)()
-            print(f"Value: {value}")
-            print(f"Trace: {trace}")
+            ### A disabled action has an empty trace, and a failed one returns False.
+            succeeded = bool(trace) and value is not False
+            if args.value:
+                print(f"Value: {value}")
+            if args.trace:
+                print(f"Trace: {trace}")
         if args.print:
             print(f"{args.print}: {config.get(args.print)}")
 
         ### In headless mode there is no TUI save step, so persist the result
         ### explicitly. This writes the JSON output file and runs custom_save.
         config.save(default_output_file, save_func=custom_save)
+        if not succeeded:
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

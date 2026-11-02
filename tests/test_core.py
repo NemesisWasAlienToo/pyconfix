@@ -16,7 +16,7 @@ def opt(name, type_, **kw):
     return ConfigOption(name=name, option_type=type_, **kw)
 
 
-def action(c, name=None, dependencies=None, requires=None):
+def action(c, name=None, dependencies=None, needs=None):
     """Register an ACTION option directly on a Core.
 
     The ``action_option`` decorator sugar now lives on the runner; Core still
@@ -29,7 +29,7 @@ def action(c, name=None, dependencies=None, requires=None):
             option_type=ConfigOptionType.ACTION,
             default=func,
             dependencies=dependencies,
-            requires=requires,
+            needs=needs,
             description=func.__doc__ or "",
         ))
         return func
@@ -153,7 +153,7 @@ def test_add_options_rejected_call_leaves_state_unchanged():
         c.add_options(opt("B", ConfigOptionType.BOOL, default=True),
                       opt("A", ConfigOptionType.BOOL, default=False))
     assert [o.name for o in c.options] == ["A"]   # "B" was not added
-    assert c._get("B") is None
+    assert c.get_option("B") is None
 
 
 def test_add_options_rejected_call_name_is_reusable():
@@ -165,7 +165,7 @@ def test_add_options_rejected_call_name_is_reusable():
         c.add_options(opt("NEW", ConfigOptionType.BOOL, default=True),
                       opt("A", ConfigOptionType.BOOL, default=False))
     c.add_options(opt("NEW", ConfigOptionType.BOOL, default=True))
-    assert c._get("NEW").name == "NEW"
+    assert c.get_option("NEW").name == "NEW"
 
 
 def test_add_options_with_parent_adds_child():
@@ -176,7 +176,7 @@ def test_add_options_with_parent_adds_child():
     c.add_options(child, parent=g)
     assert child in g.options          # nested under the group
     assert child not in c.options      # not added at the top level
-    assert c._get("CHILD") is child    # indexed for O(1) lookup
+    assert c.get_option("CHILD") is child    # indexed for O(1) lookup
 
 
 def test_add_options_with_parent_rejects_duplicate():
@@ -196,16 +196,16 @@ def test_add_options_with_parent_rejects_duplicate():
 # --------------------------------------------------------------------------- #
 
 def test_get_is_case_insensitive(core):
-    assert core._get("flag").name == "FLAG"
+    assert core.get_option("flag").name == "FLAG"
 
 
 def test_get_finds_group_and_nested_child(core):
-    assert core._get("G").option_type == ConfigOptionType.GROUP
-    assert core._get("SUB").name == "SUB"
+    assert core.get_option("G").option_type == ConfigOptionType.GROUP
+    assert core.get_option("SUB").name == "SUB"
 
 
 def test_get_unknown_returns_none(core):
-    assert core._get("NOPE") is None
+    assert core.get_option("NOPE") is None
 
 
 # --------------------------------------------------------------------------- #
@@ -213,17 +213,17 @@ def test_get_unknown_returns_none(core):
 # --------------------------------------------------------------------------- #
 
 def test_available_when_no_dependency(core):
-    assert core._is_option_available(core._get("MODE")) is True
+    assert core._is_option_available(core.get_option("MODE")) is True
 
 
 def test_available_follows_callable_dependency(core):
-    assert core._is_option_available(core._get("N")) is True
-    core._get("FLAG").value = False
-    assert core._is_option_available(core._get("N")) is False
+    assert core._is_option_available(core.get_option("N")) is True
+    core.get_option("FLAG").value = False
+    assert core._is_option_available(core.get_option("N")) is False
 
 
 def test_non_callable_dependency_raises(core):
-    bad = core._get("MODE")
+    bad = core.get_option("MODE")
     bad.dependencies = "not-callable"
     with pytest.raises(ValueError):
         core._is_option_available(bad)
@@ -234,7 +234,7 @@ def test_non_callable_dependency_raises(core):
 # --------------------------------------------------------------------------- #
 
 def test_sync_blanks_disabled_and_restores_enabled(core):
-    n = core._get("N")
+    n = core.get_option("N")
     core._sync_option_value(n, available=False)
     assert n.value is None
     core._sync_option_value(n, available=True)
@@ -242,11 +242,11 @@ def test_sync_blanks_disabled_and_restores_enabled(core):
 
 
 def test_sync_restores_enum_to_default_index(core):
-    m = core._get("MODE")
+    m = core.get_option("MODE")
     core._sync_option_value(m, available=False)
     assert m.value is None
     core._sync_option_value(m, available=True)
-    assert m.value == 1   # index of default "B"
+    assert m.value == "B"
 
 
 # --------------------------------------------------------------------------- #
@@ -262,7 +262,7 @@ def test_apply_sets_values_and_defaults(core):
 def test_apply_enum_by_choice_string(core):
     core.apply_config({"MODE": "C"})
     assert core.MODE == "C"
-    assert core._get("MODE").value == 2
+    assert core.get_option("MODE").value == "C"
 
 
 def test_apply_invalid_enum_value_raises_named_error(core):
@@ -279,7 +279,7 @@ def test_apply_blank_enum_value_restores_default(core):
     # An empty value is treated as "unset" and restores the default.
     core.apply_config({"MODE": ""})
     assert core.MODE == "B"                      # the default
-    assert core._get("MODE").value == 1
+    assert core.get_option("MODE").value == "B"
 
 
 # --------------------------------------------------------------------------- #
@@ -297,7 +297,7 @@ def test_dump_shapes(core):
 
 def test_dump_disabled_is_none(core):
     core.apply_config({})
-    core._get("FLAG").value = False
+    core.get_option("FLAG").value = False
     assert core.dump()["N"] is None
 
 
@@ -316,7 +316,7 @@ def test_attribute_enum_returns_choice_string(core):
 
 
 def test_attribute_group_returns_children_list(core):
-    assert core.G == core._get("G").options
+    assert core.G == core.get_option("G").options
 
 
 def test_attribute_unknown_raises(core):
@@ -361,17 +361,17 @@ def test_action_result_is_cached_within_one_execution():
     assert trace.count("leaf") == 2     # both references recorded in the trace
 
 
-def test_action_requires_gate_blocks_body():
+def test_action_needs_gate_blocks_body():
     c = Core()
     calls = []
 
-    @action(c, requires=lambda x: False)
+    @action(c, needs=lambda x: False)
     def gated(x):
         calls.append(1)
         return 1
 
     value, _ = c.gated()
-    assert value is None
+    assert value is False
     assert calls == []                  # body never ran
 
 
@@ -382,7 +382,7 @@ def test_action_self_cycle_detected():
     def loop(x):
         return x.loop()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError, match="loop -> loop"):
         c.loop()
 
 
@@ -451,10 +451,10 @@ def test_action_body_reads_unavailable_option_and_action():
     assert gated_ref() is None          # unavailable action -> lambda: None
 
 
-def test_action_requires_unknown_token_raises_clean_attributeerror():
+def test_action_needs_unknown_token_raises_clean_attributeerror():
     c = Core()
 
-    @action(c, requires=lambda x: x.NO_SUCH_OPTION)
+    @action(c, needs=lambda x: x.NO_SUCH_OPTION)
     def act(x):
         return 1
 
@@ -475,9 +475,9 @@ def test_add_options_callable_dependency_is_evaluated():
         opt("N", ConfigOptionType.INT, default=1, dependencies=lambda cfg: cfg.F),
     )
     c.apply_config({})
-    assert c._is_option_available(c._get("N")) is True
-    c._get("F").value = False
-    assert c._is_option_available(c._get("N")) is False
+    assert c._is_option_available(c.get_option("N")) is True
+    c.get_option("F").value = False
+    assert c._is_option_available(c.get_option("N")) is False
 
 
 def test_action_option_callable_dependency_disables_action():
@@ -492,14 +492,63 @@ def test_action_option_callable_dependency_disables_action():
     # F is False -> the action is unavailable; attribute access yields the
     # disabled action shape (None, []) rather than crashing.
     assert c.gated() == (None, [])
-    c._get("F").value = True
+    c.get_option("F").value = True
     assert c.gated() == (1, ["gated"])
 
 
-def test_python_api_string_dependency_is_rejected():
-    # String dependency expressions are for the JSON schema; through the Python
-    # API a callable must be used, so a raw string is rejected when evaluated.
+def test_python_api_string_dependency_is_compiled():
     c = Core()
-    c.add_options(opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
-    with pytest.raises(ValueError):
-        c._is_option_available(c._get("N"))
+    c.add_options(opt("F", ConfigOptionType.BOOL, default=False),
+                  opt("N", ConfigOptionType.INT, default=1, dependencies="F"))
+    assert c.N is None
+    c.get_option("F").value = True
+    assert c.N == 1
+
+
+# --------------------------------------------------------------------------- #
+# Enums in callable dependencies: `x.NAME` gives the choice name
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def tri_state():
+    c = Core()
+    c.add_options(
+        ConfigOption("FEATURE", True),
+        ConfigOption("TRI", "DISABLED", choices=["INTEGRATED", "MODULE", "DISABLED"],
+                     dependencies=lambda x: x.ENABLED_TRI),
+        ConfigOption("ENABLED_TRI", True),
+        ConfigOption("N", 1, dependencies=lambda x: x.FEATURE and x.TRI == "DISABLED"),
+    )
+    return c
+
+
+def test_callable_dependency_compares_enum_to_its_choice_name(tri_state):
+    assert tri_state.N == 1
+
+
+def test_callable_dependency_sees_changed_enum_choice(tri_state):
+    tri_state.apply_config({"TRI": "MODULE"})
+    assert tri_state.N is None
+    tri_state.apply_config({"TRI": "DISABLED"})
+    assert tri_state.N == 1
+
+
+def test_callable_dependency_sees_first_choice(tri_state):
+    # The first choice must compare by name, not as a falsy index 0.
+    seen = []
+    tri_state.add_options(ConfigOption("W", 1, dependencies=lambda x: seen.append(x.TRI) or True))
+    tri_state.apply_config({"TRI": "INTEGRATED"})
+    assert tri_state.W == 1
+    assert seen == ["INTEGRATED"]
+
+
+def test_callable_dependency_stops_at_the_other_condition(tri_state):
+    tri_state.apply_config({"FEATURE": False})
+    assert tri_state.N is None
+
+
+def test_callable_dependency_reads_disabled_enum_as_none(tri_state):
+    tri_state.apply_config({"ENABLED_TRI": False})
+    assert tri_state.TRI is None
+    assert tri_state.N is None
+

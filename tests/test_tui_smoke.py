@@ -5,7 +5,9 @@ verify the TUI is wired to the core manager (no stale references) and that key
 handling reaches core logic (toggle) and the serializer (save).
 """
 
+import importlib
 import json
+import os
 
 import curses
 import curses.textpad
@@ -32,7 +34,7 @@ RICH_SCHEMA = {
         "NUM": {"type": "int", "default": 5},
         "TXT": {"type": "string", "default": "hi"},
         "LEVEL": {"type": "enum", "default": "A", "choices": ["A", "B", "C"]},
-        "EXT_INFO": {"type": "external", "default": "x"},
+        "EXT_INFO": {"type": "external", "default": 7},
         "GRP": {"CHILD": True},
     }
 }
@@ -112,7 +114,7 @@ def app(tmp_path, monkeypatch):
     (tmp_path / "smoke.json").write_text(json.dumps(SCHEMA))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["smoke.json"])
+    cfg.load_schema(["smoke.json"])
     return cfg
 
 
@@ -121,7 +123,7 @@ def rich(tmp_path, monkeypatch):
     (tmp_path / "rich.json").write_text(json.dumps(RICH_SCHEMA))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["rich.json"])
+    cfg.load_schema(["rich.json"])
     return cfg
 
 
@@ -138,10 +140,10 @@ def test_menu_loop_quits_cleanly(app, stub_curses):
 
 
 def test_menu_loop_toggles_first_bool(app, stub_curses):
-    assert app._get("FIRST_BOOL").value is True
+    assert app.get_option("FIRST_BOOL").value is True
     tui = Tui(app,"out.json")
     tui._menu_loop(FakeStdscr([curses.KEY_ENTER, tui.quite_key]))
-    assert app._get("FIRST_BOOL").value is False
+    assert app.get_option("FIRST_BOOL").value is False
 
 
 def test_menu_loop_save_writes_config(app, stub_curses, tmp_path):
@@ -171,7 +173,7 @@ def test_run_save_func_receives_config_data(tmp_path, monkeypatch, stub_curses):
         recorded["data"] = dict(config_data)
 
     cfg = pyconfix()
-    cfg.load_schem(["smoke.json"])
+    cfg.load_schema(["smoke.json"])
     out = str(tmp_path / "out.json")
 
     # Drive the real runner graphical path: save (full dump), dismiss, then quit.
@@ -203,7 +205,7 @@ def test_search_options_matches_group_children(app):
 
 def test_collapse_toggles_group_expanded(app):
     tui = Tui(app,"out.json")
-    grp = app._get("GRP")
+    grp = app.get_option("GRP")
     before = grp.expanded
     flat = tui._flatten_options(app.options)   # flatten lives on the TUI now
     idx = next(i for i, (o, _) in enumerate(flat) if o is grp)
@@ -216,7 +218,7 @@ def test_collapse_toggles_group_expanded(app):
 # --------------------------------------------------------------------------- #
 
 def test_flatten_includes_expanded_group_children_with_depth(app):
-    grp = app._get("GRP")
+    grp = app.get_option("GRP")
     grp.expanded = True
     flat = Tui(app,"out.json")._flatten_options(app.options)
     depths = {o.name: d for o, d in flat}
@@ -230,8 +232,8 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
     }))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["s.json"])
-    cfg._get("FLAG").value = False        # disables DEP (depends on FLAG)
+    cfg.load_schema(["s.json"])
+    cfg.get_option("FLAG").value = False        # disables DEP (depends on FLAG)
 
     hidden = Tui(cfg,"out.json")._flatten_options(cfg.options)
     assert "DEP" not in [o.name for o, _ in hidden]
@@ -246,15 +248,15 @@ def test_flatten_hides_disabled_unless_show_disabled(tmp_path, monkeypatch):
 def test_menu_navigate_down_then_toggle_second_bool(rich, stub_curses):
     tui = Tui(rich, "out.json")
     tui._menu_loop(FakeStdscr([curses.KEY_DOWN, curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("B1").value is True      # untouched
-    assert rich._get("B2").value is True      # False -> True after toggle
+    assert rich.get_option("B1").value is True      # untouched
+    assert rich.get_option("B2").value is True      # False -> True after toggle
 
 
 def test_menu_navigate_up_is_clamped_at_top(rich, stub_curses):
     tui = Tui(rich, "out.json")
     # KEY_UP at the top row is a no-op; ENTER still toggles the first option.
     tui._menu_loop(FakeStdscr([curses.KEY_UP, curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("B1").value is False
+    assert rich.get_option("B1").value is False
 
 
 def test_menu_help_page_opens_and_returns(rich, stub_curses):
@@ -272,7 +274,7 @@ def test_menu_description_page_opens_and_returns(rich, stub_curses):
 
 def test_menu_collapse_key_expands_group(rich, stub_curses):
     tui = Tui(rich, "out.json")
-    grp = rich._get("GRP")
+    grp = rich.get_option("GRP")
     assert grp.expanded is False
     downs = [curses.KEY_DOWN] * _rows_to(rich, "GRP")
     tui._menu_loop(FakeStdscr(downs + [tui.collapse_key, tui.quite_key]))
@@ -281,7 +283,7 @@ def test_menu_collapse_key_expands_group(rich, stub_curses):
 
 def test_menu_save_diff_writes_only_changes(rich, stub_curses, tmp_path):
     out = str(tmp_path / "diff.json")
-    rich._get("B2").value = True                 # one change from defaults
+    rich.get_option("B2").value = True                 # one change from defaults
     tui = Tui(rich, out)
     tui._menu_loop(FakeStdscr([tui.save_diff_key, ord(' '), tui.quite_key]))
     written = json.loads((tmp_path / "diff.json").read_text())
@@ -294,7 +296,7 @@ def test_menu_edit_int_option(rich, stub_curses):
     tui = Tui(rich, "out.json")
     downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
     tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("NUM").value == 42
+    assert rich.get_option("NUM").value == 42
 
 
 def test_menu_edit_int_option_rejects_invalid(rich, stub_curses):
@@ -302,7 +304,7 @@ def test_menu_edit_int_option_rejects_invalid(rich, stub_curses):
     tui = Tui(rich, "out.json")
     downs = [curses.KEY_DOWN] * _rows_to(rich, "NUM")
     tui._menu_loop(FakeStdscr(downs + [curses.KEY_ENTER, tui.quite_key]))
-    assert rich._get("NUM").value == 5           # kept the original on ValueError
+    assert rich.get_option("NUM").value == 5           # kept the original on ValueError
     FakeTextbox.result = "42"                     # restore for other tests
 
 
@@ -332,7 +334,7 @@ def test_menu_action_enter_executes(tmp_path, monkeypatch, stub_curses):
     (tmp_path / "rich.json").write_text(json.dumps({"A": {"FLAG": True}}))
     monkeypatch.chdir(tmp_path)
     cfg = pyconfix()
-    cfg.load_schem(["rich.json"])
+    cfg.load_schema(["rich.json"])
     ran = []
     cfg.add_options(ConfigOption(name="build", option_type=ConfigOptionType.ACTION,
                                  default=lambda x: ran.append(True)))
@@ -356,4 +358,148 @@ def test_menu_search_enter_toggles_match(rich, stub_curses):
     screen = FakeStdscr([tui.search_key, ord('B'), ord('2'),
                          curses.KEY_ENTER, tui.abort_key, -1, tui.quite_key])
     tui._menu_loop(screen)
-    assert rich._get("B2").value is True         # False -> True via search+enter
+    assert rich.get_option("B2").value is True         # False -> True via search+enter
+
+
+# Toggling an option in the TUI: the case from example.py, where turning off
+# ENABLE_FEATURE_A crashed the redraw on POWER_TEST's INT_TYPE_DEDUCED**2 < 10.
+FEATURE_SCHEMA = {"S": {
+    "FEATURE": True,
+    "COUNT": {"default": 2, "deps": "FEATURE"},
+    "SMALL": {"default": True, "deps": "COUNT ** 2 < 10"},
+    "NEGATED": {"default": True, "deps": "-COUNT < 0"},
+    "AFTER": {"default": True, "deps": "SMALL"},
+}}
+
+
+def toggle(tui, cfg, name):
+    flat = tui._flatten_options(cfg.options)
+    row = [option.name for option, _ in flat].index(name)
+    tui._handle_enter(flat, row, None, False)
+
+
+def available(tui, cfg):
+    return {option.name: bool(tui.session._is_option_available(option)) for option in cfg.options}
+
+
+@pytest.fixture
+def feature(tmp_path, monkeypatch):
+    (tmp_path / "schema.json").write_text(json.dumps(FEATURE_SCHEMA))
+    monkeypatch.chdir(tmp_path)
+    return pyconfix().load_schema(["schema.json"])
+
+
+def test_toggling_option_off_redraws_with_math_on_disabled_option(feature):
+    tui = Tui(feature, "out.json")
+    toggle(tui, feature, "FEATURE")
+    assert [o.name for o, _ in tui._flatten_options(feature.options)] == ["FEATURE"]
+    assert available(tui, feature) == {
+        "FEATURE": True, "COUNT": False, "SMALL": False, "NEGATED": False, "AFTER": False}
+
+
+def test_toggling_option_back_on_restores_dependents(feature):
+    tui = Tui(feature, "out.json")
+    toggle(tui, feature, "FEATURE")
+    tui._flatten_options(feature.options)
+    toggle(tui, feature, "FEATURE")
+    assert [o.name for o, _ in tui._flatten_options(feature.options)] == list(FEATURE_SCHEMA["S"])
+
+
+def test_toggling_shows_disabled_options_when_asked(feature):
+    tui = Tui(feature, "out.json", show_disabled=True)
+    toggle(tui, feature, "FEATURE")
+    assert [o.name for o, _ in tui._flatten_options(feature.options)] == list(FEATURE_SCHEMA["S"])
+
+
+def test_search_redraws_after_toggling_option_off(feature):
+    tui = Tui(feature, "out.json")
+    toggle(tui, feature, "FEATURE")
+    assert [o.name for o, _ in tui._search_options(feature.options, "S")] == []
+    assert [o.name for o, _ in tui._search_options(feature.options, "FEATURE")] == ["FEATURE"]
+
+
+def test_dump_and_diff_after_toggling_option_off(feature):
+    tui = Tui(feature, "out.json")
+    toggle(tui, feature, "FEATURE")
+    tui._flatten_options(feature.options)
+    assert feature.dump() == {
+        "FEATURE": False, "COUNT": None, "SMALL": None, "NEGATED": None, "AFTER": None}
+    assert feature.diff() == {"FEATURE": False}
+
+
+@pytest.mark.parametrize("expression", [
+    "COUNT > 1", "COUNT < 9", "COUNT >= 1", "COUNT <= 9", "1 < COUNT",
+    "COUNT + 1", "COUNT - 1", "COUNT * 2", "COUNT / 2", "COUNT ** 2", "COUNT % 3",
+    "COUNT & 3", "COUNT | 1", "COUNT ^ 1", "COUNT >> 1", "COUNT << 1", "-COUNT",
+    "(COUNT + 1) * 2 > 3", "COUNT == 2", "NAME == 'x'", "MODE == DEBUG",
+])
+def test_every_operator_on_disabled_option_disables_dependent(tmp_path, monkeypatch, expression):
+    (tmp_path / "schema.json").write_text(json.dumps({"S": {
+        "FEATURE": True,
+        "COUNT": {"default": 2, "deps": "FEATURE"},
+        "NAME": {"default": "x", "deps": "FEATURE"},
+        "MODE": {"default": "DEBUG", "choices": ["DEBUG", "INFO"], "deps": "FEATURE"},
+        "DEPENDENT": {"default": True, "deps": expression},
+    }}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["schema.json"])
+    tui = Tui(cfg, "out.json")
+
+    assert "DEPENDENT" in [o.name for o, _ in tui._flatten_options(cfg.options)]
+    toggle(tui, cfg, "FEATURE")
+    assert "DEPENDENT" not in [o.name for o, _ in tui._flatten_options(cfg.options)]
+    toggle(tui, cfg, "FEATURE")
+    assert "DEPENDENT" in [o.name for o, _ in tui._flatten_options(cfg.options)]
+
+
+def test_negated_math_on_disabled_option_enables_dependent(tmp_path, monkeypatch):
+    (tmp_path / "schema.json").write_text(json.dumps({"S": {
+        "FEATURE": True,
+        "COUNT": {"default": 2, "deps": "FEATURE"},
+        "FALLBACK": {"default": True, "deps": "!(COUNT > 1)"},
+    }}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["schema.json"])
+    tui = Tui(cfg, "out.json")
+
+    assert "FALLBACK" not in [o.name for o, _ in tui._flatten_options(cfg.options)]
+    toggle(tui, cfg, "FEATURE")
+    assert "FALLBACK" in [o.name for o, _ in tui._flatten_options(cfg.options)]
+
+
+def test_action_and_group_gated_by_math_on_disabled_option(tmp_path, monkeypatch):
+    (tmp_path / "schema.json").write_text(json.dumps({"S": {
+        "FEATURE": True,
+        "COUNT": {"default": 2, "deps": "FEATURE"},
+        "GRP": {"type": "group", "deps": "COUNT > 1", "options": {"CHILD": True}},
+    }}))
+    monkeypatch.chdir(tmp_path)
+    cfg = pyconfix().load_schema(["schema.json"])
+
+    @cfg.action_option(dependencies=lambda x: x.COUNT is not None and x.COUNT > 1)
+    def run_it(x):
+        return "ran"
+
+    tui = Tui(cfg, "out.json")
+    assert cfg.run_it()[0] == "ran"
+    toggle(tui, cfg, "FEATURE")
+    names = [o.name for o, _ in tui._flatten_options(cfg.options)]
+    assert "GRP" not in names and "run_it" not in names
+    assert cfg.run_it() == (None, [])
+
+
+def test_every_example_bool_survives_toggling(monkeypatch):
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    monkeypatch.chdir(root)
+    monkeypatch.syspath_prepend(root)
+    example = importlib.import_module("example")
+    cfg = example.create_config()
+    tui = Tui(cfg, "out.json", show_disabled=True)
+
+    assert cfg.ENABLE_FEATURE_A is True
+    for option in list(cfg.option_map.values()):
+        if option.option_type == ConfigOptionType.BOOL:
+            for _ in range(2):
+                tui._handle_enter([(option, 0)], 0, None, False)
+                tui._flatten_options(cfg.options)
+                cfg.dump()

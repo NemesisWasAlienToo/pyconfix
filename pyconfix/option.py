@@ -6,6 +6,7 @@
 # THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 from enum import StrEnum
+from functools import partial
 from .parser import *
 
 class ConfigOptionType(StrEnum):
@@ -18,11 +19,38 @@ class ConfigOptionType(StrEnum):
     EXTERNAL = "external"
 
 class ConfigOption:
-    def __init__(self, name, option_type:ConfigOptionType, default=None, data=None, description="",
-                 dependencies=None, options=None, choices=None, expanded=False, requires=None):
+    VALUE_TYPES = {
+        ConfigOptionType.BOOL: bool,
+        ConfigOptionType.INT: int,
+        ConfigOptionType.STRING: str,
+    }
+
+    def __init__(self, name, default=None, option_type:ConfigOptionType=None, data=None, description="",
+                 dependencies=None, options=None, choices=None, expanded=False, needs=None, do_not_cache=False, **params):
         if any(c.isspace() for c in name):
             raise ValueError(f"Option name cannot contain white space: {name}")
-        
+
+        # When no type is given, deduce it from the provided value — mirroring the
+        # JSON short forms (choices -> enum, then bool/int/string), plus the
+        # Python-only cases (callable -> action, options -> group).
+        if option_type is None:
+            if choices:
+                option_type = ConfigOptionType.ENUM
+            elif isinstance(default, bool):
+                option_type = ConfigOptionType.BOOL
+            elif isinstance(default, int):
+                option_type = ConfigOptionType.INT
+            elif isinstance(default, str):
+                option_type = ConfigOptionType.STRING
+            elif callable(default):
+                option_type = ConfigOptionType.ACTION
+            elif options is not None:
+                option_type = ConfigOptionType.GROUP
+            else:
+                raise ValueError(
+                    f"Option '{name}': cannot deduce a type; pass 'option_type' or "
+                    "a value to infer it from (default, choices or options)")
+
         # For custom types from python API, user can jsut create factory functions
         # no fancy custom type detection is needed
         try:
@@ -35,18 +63,25 @@ class ConfigOption:
                 raise ValueError(f"Multiple choice option {name} must have at least one choice")
             if default not in (choices or []):
                 default = choices[0]
-            if any(' ' in choice for choice in (choices or [])):
-                raise ValueError(f"Choice names cannot contain white space: in option {name}")
+            if any(not isinstance(choice, str) or ' ' in choice for choice in (choices or [])):
+                raise ValueError(f"Choices of option {name} must be strings without white space")
 
         if option_type == ConfigOptionType.ACTION and not callable(default):
             raise ValueError(f"Action option {name} must have a callable default value")
 
-        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and requires:
-            raise ValueError(f"The 'requires' parameter is only valid for action and group options, not {option_type} options")
+        if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and needs:
+            raise ValueError(f"The 'needs' parameter is only valid for action and group options, not {option_type} options")
         
-        if requires:
-            if not callable(requires):
-                raise ValueError(f"Requires for option {name} must be a callable")
+        if params and option_type != ConfigOptionType.ACTION:
+            raise ValueError(f"Extra fields are only valid for action options, not {name}: {list(params)}")
+
+        for param in params:
+            if not isinstance(param, str) or not param.isidentifier():
+                raise ValueError(f"Invalid parameter name '{param}' in option {name}")
+
+        # An action's body receives its params as keyword arguments, after the session.
+        if params:
+            default = partial(default, **params)
 
         if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
             raise ValueError(f"Group option {name} must have a list of options")
@@ -60,20 +95,61 @@ class ConfigOption:
         if option_type == ConfigOptionType.EXTERNAL and callable(default):
             raise ValueError(f"External option {name} cannot have a callable default")
 
+        if default is not None and not isinstance(default, self.VALUE_TYPES.get(option_type, object)):
+            raise ValueError(f"Invalid default '{default}' for {option_type} option '{name}'")
+
         self.name = name
         self.option_type = option_type
         self.default = default
-        self.value = choices.index(default) if (option_type == ConfigOptionType.ENUM) else default
+        self._value = default
         self.data = data
         self.description = description
-        self.dependencies = dependencies
+        self.dependencies = self._compile_expression(dependencies, "dependencies")
         self.options = options or []
         self.choices = choices or []
         self.expanded = expanded
-        self.requires = requires
+        # Unlike dependencies, needs may run actions: `A() && B()`.
+        self.needs = self._compile_expression(needs, "needs", allow_calls=True)
+        self.do_not_cache = do_not_cache
+        self.parent = None
 
-        if dependencies and not callable(dependencies):
-            self.postfix_dependencies = shunting_yard(tokenize(self.dependencies)) if self.dependencies else []
+    def _compile_expression(self, expression, field, allow_calls=False):
+        """Compile a dependency or needs expression into a ``predicate(x)``.
+
+        ``x`` is the evaluation session, so names resolve when the predicate runs.
+        By then the whole tree is registered, whatever order options were added in.
+        """
+        if not expression:
+            return None
+        if callable(expression):
+            return expression
+        if not isinstance(expression, str):
+            raise ValueError(f"The '{field}' for option {self.name} must be a string or a callable")
+
+        postfix = shunting_yard(tokenize(expression))
+        setattr(self, f"postfix_{field}", postfix)
+
+        return lambda x: BooleanExpressionParser().evaluate_postfix(
+            postfix, getter=lambda key: getattr(x, key), allow_calls=allow_calls)
+
+    @property
+    def value(self):
+        """The current value. An enum holds the name of its choice."""
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        """Store a value, raising ValueError if it does not fit the option's type.
+
+        None is how a disabled option is stored.
+        """
+        if self.option_type == ConfigOptionType.ENUM:
+            valid = value in self.choices
+        else:
+            valid = isinstance(value, self.VALUE_TYPES.get(self.option_type, object))
+        if value is not None and not valid:
+            raise ValueError(f"Invalid value '{value}' for {self.option_type} option '{self.name}'")
+        self._value = value
 
     def to_dict(self):
         return {
@@ -85,13 +161,14 @@ class ConfigOption:
             'dependencies': self.dependencies,
             'options': [opt.to_dict() for opt in self.options],
             'choices': self.choices,
-            'requires': self.requires,
+            'needs': self.needs,
+            'do_not_cache': self.do_not_cache,
         }
     
     def clone_with(self, **kwargs):
         """
         This method creates a copy of the current instance and updates its attributes with the values 
-        specified in the keyword arguments.
+        specified in the keyword arguments. Any other keyword is a param, as in the constructor.
         """
         params = {
             'name': self.name,
@@ -103,7 +180,8 @@ class ConfigOption:
             'options': self.options,
             'choices': self.choices,
             'expanded': self.expanded,
-            'requires': self.requires,
+            'needs': self.needs,
+            'do_not_cache': self.do_not_cache,
         }
         params.update(kwargs)
         return ConfigOption(**params)

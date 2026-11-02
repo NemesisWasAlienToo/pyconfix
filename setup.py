@@ -11,18 +11,21 @@ _spec.loader.exec_module(_version_module)
 setup(
     name="pyconfix",
     version=_version_module.__version__,
-    description="A simple feature managment tool library",
+    description="The only automation tool you'll ever need",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="Nemesis",
     author_email="nemesiswasalientoo@proton.me",
     url="https://github.com/NemesisWasAlienToo/pyconfix",
-    packages=["pyconfix"],
+    packages=["pyconfix", "pyconfix.formats"],
     python_requires=">=3.11",
     license="MIT",
     install_requires=[
         "windows-curses ; platform_system == 'Windows'"
     ],
+    extras_require={
+        "yaml": ["pyyaml"],
+    },
     entry_points={
         'console_scripts': [
             'pyconfix = pyconfix.__main__:main',

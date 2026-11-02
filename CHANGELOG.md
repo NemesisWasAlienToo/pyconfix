@@ -27,6 +27,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.0]
+### Breaking changes
+- load_schem is now load_schema, and schem_files is now schema_files
+- An action with failed needs returns False instead of None
+- pyconfix --run exits with 1 if the task fails, is disabled or doesn't exist
+- Enums hold the choice name instead of the index
+- Setting a value or default of the wrong type raises an error
+- Saved config files with wrong types raise an error
+- Dependency functions receive the session instead of the core
+- Enum choices are case sensitive in expressions
+- Enum choices must be strings
+- aliases is a reserved schema key
+- The parser takes the getter in evaluate_postfix
+- load_schema and parse_options moved to pyconfix.schema
+- Dependency cycles raise ValueError
+
+### Added
+- YAML schemas with pip install pyconfix[yaml]
+- JSON and YAML files can include each other
+- find_schema looks for JSON first, then YAML
+- load_schema([]) loads nothing
+- Actions can run shell scripts
+- Externals can run a shell script at load
+- Action aliases
+- Extra alias fields are passed to the action as arguments
+- Aliases section in schemas
+- Needs in schemas
+- Needs can call actions
+- String dependencies and needs work from Python
+- do_not_cache option
+- Evaluation sessions
+- get_option returns the option itself
+- Enum choices can be read as attributes
+- Negative values in expressions
+- New file formats are a single file in pyconfix/formats
+
+### Changed
+- Schema loading moved to schema.py
+- Options know their parent
+- Results are cached per session
+- TUI reuses the session until a value changes
+- Aliases can't use a built-in type name
+
+### Fixed
+- && and || skip the right side when possible
+- Doing math with None results in None
+- Group dependencies and needs apply to all children
+- Better cycle detection
+- Malformed expressions fail before anything runs
+- Unterminated strings raise an error
+- Bad schema top entries raise an error
+- Negative numbers work with -o
+- Saved configs no longer override external options
+
+### Removed
+- register_format, ConfigFormat and JsonFormat
+
+---
+
+## [1.2.0]
+### Added
+- `pyconfix.include(other, parent=None)` — the Python-side counterpart to the JSON `include` directive. Merges another config's options (nested children and actions included) into this one through the normal add path, so names stay globally unique. Pass a group as `parent` to nest the imported options under it. This lets options and actions be distributed across files and composed, while each module's config stays runnable standalone.
+- `python -m pyconfix` gained `--run ACTION` (`-r`) to execute an action headlessly, plus `--value` (`-v`) and `--trace` (`-t`) flags.
+- `ConfigOption` deduces its type from the value when `option_type` is omitted, mirroring the JSON short forms: bool/int/string from the default, `enum` from `choices`, `action` from a callable default, `group` from an `options` list. So a simple option is just a name and a value.
+
+### Changed
+- `ConfigOption`'s second positional argument is now `default` (was `option_type`); `option_type` is now optional. Every shipped call site uses keyword arguments, so the library and examples are unaffected — but code that passed `option_type` positionally must switch to the keyword.
+- Running an action from the CLI is now quiet by default — neither the return value nor the execution trace prints. Pass `--value` (`-v`) and/or `--trace` (`-t`) to show them. Applies to both `example.py` and `python -m pyconfix`.
+- Cleaned up the syntax for alias some more. Now the name is the second argument.
+
+---
+
+## [1.1.0]
+### Changed
+- Renamed the action/group gate from `requires` to `needs` — the Python parameter (`ConfigOption(..., needs=...)`, `@config.action_option(needs=...)`) and the schema-reserved key. Behaviour is unchanged (a callable evaluated before the action runs); the JSON "not supported in the schema" error now names `needs`.
+
+---
+
 ## [1.0.0]
 First stable release. The public Python API and the JSON schema syntax are now considered stable.
 

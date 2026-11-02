@@ -11,3 +11,5 @@ build
 coverage.xml
 htmlcov
 .pytest_cache
+.laxative
+measurement

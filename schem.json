@@ -114,7 +114,8 @@
         },
         "GROUP_EXTERNAL": {
             "include": [
-                "extra_schem.json"
+                "extra_schem.json",
+                "extra_schem.yaml"
             ]
         }
     }

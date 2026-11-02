@@ -18,6 +18,7 @@ import curses
 import curses.textpad
 import curses.ascii
 import textwrap
+from functools import cached_property
 
 from .option import ConfigOptionType
 
@@ -38,6 +39,11 @@ class Tui:
         self.output_file = output_file
         self.show_disabled = show_disabled
         self.save_func = save_func
+
+    @cached_property
+    def session(self):
+        """Evaluation session shared by redraws until something changes a value."""
+        return self.app.create_evaluation_session()
 
     def run(self):
         """Run the main interactive loop using curses."""
@@ -151,7 +157,7 @@ class Tui:
             elif option.value is None and option.option_type != ConfigOptionType.GROUP:
                 value = "[disabled]"
             elif option.option_type == ConfigOptionType.ENUM:
-                value = option.choices[option.value][:10] + "..." if len(option.choices[option.value]) > 10 else option.choices[option.value]
+                value = option.value[:10] + "..." if len(option.value) > 10 else option.value
             elif option.option_type == ConfigOptionType.BOOL:
                 value = "True" if option.value else "False"
             elif option.option_type in [ConfigOptionType.INT, ConfigOptionType.STRING]:
@@ -169,12 +175,23 @@ class Tui:
             if idx == current_row:
                 stdscr.attroff(curses.color_pair(1))
 
+    def _refresh_option(self, option):
+        """Return whether ``option`` is available, keeping its value in sync.
+
+        The sync blanks or restores values, so it invalidates the session when
+        it changes one: results cached so far may have read the old value.
+        """
+        available = self.session._is_option_available(option)
+        previous_value = option.value
+        self.app._sync_option_value(option, available)
+        if option.value != previous_value:
+            self.session.invalidate_cache()
+        return available
+
     def _flatten_options(self, options, depth=0):
-        app = self.app
         flat_options = []
         for option in options:
-            available = app._is_option_available(option)
-            app._sync_option_value(option, available)
+            available = self._refresh_option(option)
             if not available and not self.show_disabled:
                 continue
             flat_options.append((option, depth))
@@ -183,11 +200,9 @@ class Tui:
         return flat_options
 
     def _search_options(self, options, query, depth=0):
-        app = self.app
         flat_options = []
         for option in options:
-            available = app._is_option_available(option)
-            app._sync_option_value(option, available)
+            available = self._refresh_option(option)
             if self.show_disabled or available:
                 if option.option_type == ConfigOptionType.GROUP:
                     option.expanded = True
@@ -332,7 +347,7 @@ class Tui:
             curses.noecho()
             curses.cbreak()
             stdscr.keypad(True)
-            return
+        self.session.invalidate_cache()
 
     def _edit_option(self, stdscr, option):
         if option.value is None:
@@ -425,7 +440,7 @@ class Tui:
     def _edit_multiple_choice_option(self, stdscr, option):
         curses.curs_set(0)
         max_y, max_x = stdscr.getmaxyx()
-        current_choice = option.value if option.value is not None else 0
+        current_choice = option.choices.index(option.value) if option.value is not None else 0
         original_choice = option.value
         while True:
             stdscr.clear()
@@ -446,7 +461,7 @@ class Tui:
             elif key == curses.KEY_DOWN and current_choice < len(option.choices) - 1:
                 current_choice += 1
             elif key in (curses.KEY_ENTER, 10, 13):
-                option.value = current_choice
+                option.value = option.choices[current_choice]
                 break
             elif key == self.abort_key:
                 option.value = original_choice

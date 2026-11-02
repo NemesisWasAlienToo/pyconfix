@@ -8,9 +8,9 @@
 """Top-level runner for pyconfix.
 
 ``pyconfix`` is the object users construct. It is the top of the dependency
-graph: it owns a :class:`~pyconfix.core.Core` and calls the serializer (files),
-core (options) and, when interactive, the TUI (curses). Nothing lower calls back
-up here.
+graph: it owns a :class:`~pyconfix.core.Core` and calls schema (schema files),
+the serializer (config files), core (options) and, when interactive, the TUI
+(curses). Nothing lower calls back up here.
 
 All option-related access (``add_options``, ``register_alias``, ``get``,
 attribute lookups, actions, ...) is forwarded to the underlying Core, so from a
@@ -20,7 +20,7 @@ logic lives in Core.
 
 from .core import Core
 from .option import ConfigOption, ConfigOptionType
-from . import serializer
+from . import schema, serializer
 
 
 class pyconfix:
@@ -40,9 +40,14 @@ class pyconfix:
         """The underlying option manager."""
         return self._core
 
-    def load_schem(self, schem_files=["pyconfixfile.json"]):
-        """Read and import schema files into the core option tree."""
-        serializer.load_schema(self._core, schem_files)
+    def load_schema(self, schema_files=None):
+        """Read and import schema files into the core option tree.
+
+        Without ``schema_files``, loads ``pyconfixfile`` in the first format found.
+        """
+        if schema_files is None:
+            schema_files = [schema.find_schema("pyconfixfile")]
+        schema.load_schema(self._core, schema_files)
         return self
 
     def apply_config(self, config_files=None, overlay=None):
@@ -56,6 +61,23 @@ class pyconfix:
         saved_config = serializer.read_config_files(config_files or [])
         if overlay: saved_config.update(overlay)
         self._core.apply_config(saved_config)
+        return self
+
+    def include(self, other, parent=None):
+        """Merge another config's options into this one.
+
+        ``other`` is another ``pyconfix`` (or a bare ``Core``); every one of its
+        top-level options — and their nested children and actions — is added
+        through the normal add path, so names are registered/indexed and any
+        duplicate raises. Pass ``parent`` (a group option, e.g.
+        ``cfg.group_option("db").get()``) to nest the included options under it.
+
+        This is the Python-side counterpart to the JSON ``include`` directive:
+        how you obtain ``other`` (import a module and call a builder, read a
+        variable, ...) is left entirely to the caller.
+        """
+        source = other.core if hasattr(other, "core") else other
+        self._core.add_options(*source.options, parent=parent)
         return self
 
     # ----------------------------------------------------------------------- #
@@ -78,14 +100,15 @@ class pyconfix:
                 ``get().options`` directly, which bypasses that)."""
                 return core.add_options(*options, parent=self.group)
 
-            def action_option(self, name=None, dependencies=None, requires=None):
+            def action_option(self, name=None, dependencies=None, needs=None, do_not_cache=False):
                 def decorator(func):
                     new_option = ConfigOption(
                         name=name or func.__name__,
                         option_type=ConfigOptionType.ACTION,
                         default=func,
                         dependencies=dependencies,
-                        requires=requires,
+                        needs=needs,
+                        do_not_cache=do_not_cache,
                         description=func.__doc__ or ""
                     )
                     # Same add path as everything else: it enforces the global
@@ -96,15 +119,16 @@ class pyconfix:
                 return decorator
         return GroupProxy(group)
 
-    def action_option(self, name=None, dependencies=None, requires=None):
+    def action_option(self, name=None, dependencies=None, needs=None, do_not_cache=False):
         """
         Create an action option.
         :param name: Optional action name, defaults to function name.
-        :param dependencies: Optional dependency expression or function.
-        :param requires: Optional requires function.
+        :param dependencies: Optional dependency function.
+        :param needs: Optional needs function.
+        :param do_not_cache: Run the action every time instead of once per session.
         :return: Decorator that registers the action.
         """
-        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, requires=requires)
+        return self._create_action_decorator().action_option(name=name, dependencies=dependencies, needs=needs, do_not_cache=do_not_cache)
 
     def group_option(self, name, dependencies=None):
         """

@@ -489,6 +489,7 @@ def test_action_and_group_gated_by_math_on_disabled_option(tmp_path, monkeypatch
 
 
 def test_every_example_bool_survives_toggling(monkeypatch):
+    pytest.importorskip("yaml")  # schem.json includes a YAML file
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     monkeypatch.chdir(root)
     monkeypatch.syspath_prepend(root)

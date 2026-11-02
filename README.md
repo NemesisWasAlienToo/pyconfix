@@ -1,6 +1,6 @@
 # pyconfix
 
-[![Tests](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml/badge.svg)](https://github.com/NemesisWasAlienToo/pyconfig/actions/workflows/tests.yml)
+[![Tests](https://github.com/NemesisWasAlienToo/pyconfix/actions/workflows/tests.yml/badge.svg)](https://github.com/NemesisWasAlienToo/pyconfix/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 

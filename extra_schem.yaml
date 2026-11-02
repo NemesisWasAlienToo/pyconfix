@@ -7,3 +7,25 @@ YAML Config:
     default: INFO
     choices: [DEBUG, INFO, ERROR]
     deps: YAML_ENABLED && YAML_THREADS > 1
+  YAML_HELLO:
+    type: action
+    default: |
+      echo "Hello from YAML"
+      sleep 2
+    deps: YAML_ENABLED
+  YAML_BUILD:
+    type: action
+    deps: YAML_ENABLED
+    default: |
+      set -e
+      echo "Building..."
+      mkdir -p build
+      cd build
+      echo done > result.txt
+      sleep 2
+  YAML_DEPLOY:
+    type: action
+    needs: YAML_HELLO() && YAML_BUILD()
+    default: |
+      echo "Deploying..."
+      sleep 2

@@ -87,6 +87,8 @@ def shunting_yard(tokens, precedence=None):
       ==, !=, >, <, >=, <= : 2
       &&  : 1
       ||  : 0
+    A name directly followed by ``()`` is a call and becomes a ``()`` token right
+    after that name. Calls take no arguments.
     """
     if precedence is None:
         precedence = {
@@ -109,7 +111,18 @@ def shunting_yard(tokens, precedence=None):
     output = []
     operators = []
     prev = None
-    for token in tokens:
+    skip = False
+    for i, token in enumerate(tokens):
+        if skip:
+            skip = False
+            continue
+        if token == '(' and prev is not None and prev.isidentifier():
+            if tokens[i + 1:i + 2] != [')']:
+                raise ValueError(f"Calls take no arguments: {prev}(...)")
+            output.append('()')
+            prev = ')'
+            skip = True
+            continue
         # A '-' is unary when nothing that could be a left operand precedes it.
         if token == '-' and (prev is None or prev == '(' or prev in precedence):
             token = 'u-'
@@ -200,45 +213,73 @@ class BooleanExpressionParser:
         else:
             raise ValueError(f"Unknown operator: {op}")
 
-    def evaluate_postfix(self, tokens, getter):
+    def _operation(self, op, right, left=None):
+        """A function computing ``op``. && and || only run ``right`` if needed."""
+        if op == '&&':
+            return lambda: bool(left()) and bool(right())
+        if op == '||':
+            return lambda: bool(left()) or bool(right())
+        if left is None:
+            return lambda: self.eval_operator(op, right())
+        return lambda: self.eval_operator(op, left=left(), right=right())
+
+    def _call(self, name, operand):
+        def call():
+            function = operand()
+            if not callable(function):
+                raise ValueError(f"'{name}' cannot be called")
+            return function()
+        return call
+
+    def _operand(self, token, getter):
+        """A function giving the value of ``token``."""
+        if token == 'true':
+            return lambda: True
+        if token == 'false':
+            return lambda: False
+        if token.replace('.', '', 1).isdigit():
+            value = float(token) if '.' in token else int(token)
+            return lambda: value
+        # @TODO Optimize this, this can be done during tokenization
+        if token.lower().startswith('0x'):
+            return lambda: int(token, 16)
+        if token.lower().startswith('0b'):
+            return lambda: int(token, 2)
+        if token.startswith("'") and token.endswith("'"):
+            return lambda: token[1:-1]
+        return lambda: getter(token)
+
+    def evaluate_postfix(self, tokens, getter, allow_calls=False):
         """
         Evaluates a postfix expression given:
         - tokens: list of tokens in postfix order,
-        - getter: a function that returns the value for a given token.
+        - getter: a function that returns the value for a given token,
+        - allow_calls: whether ``NAME()`` is allowed; raises ValueError if not.
+
+        Nothing runs until the whole expression is built, so a malformed one has
+        no side effects and && and || can skip their right side.
         """
         stack = []
+        previous = None
         for token in tokens:
-            if token == 'true':
-                stack.append(True)
-            elif token == 'false':
-                stack.append(False)
-            elif token.replace('.', '', 1).isdigit():
-                if '.' in token:
-                    stack.append(float(token))
-                else:
-                    stack.append(int(token))
-            # @TODO Optimize this, this can be done during tokenization
-            elif token.lower().startswith('0x'):
-                stack.append(int(token, 16))
-            elif token.lower().startswith('0b'):
-                stack.append(int(token, 2))
-            elif token.isalnum() or (token.startswith("'") and token.endswith("'")) or '_' in token:
-                if token.startswith("'") and token.endswith("'"):
-                    stack.append(token[1:-1])
-                else:
-                    stack.append(getter(token))
+            if token == '()':
+                if not allow_calls:
+                    raise ValueError(f"Calls are not allowed in this context: {previous}()")
+                stack.append(self._call(previous, stack.pop()))
+            elif token in ('!', 'u-'):
+                if not stack:
+                    raise ValueError(f"Missing operand for '{token}'")
+                stack.append(self._operation(token, stack.pop()))
+            elif token.replace('.', '', 1).isdigit() or token.isalnum() or '_' in token \
+                    or (token.startswith("'") and token.endswith("'")):
+                stack.append(self._operand(token, getter))
             else:
-                if token in ('!', 'u-'):
-                    if not stack:
-                        raise ValueError(f"Missing operand for '{token}'")
-                    right = stack.pop()
-                    stack.append(self.eval_operator(token, right))
-                else:
-                    if len(stack) < 2:
-                        raise ValueError(f"Missing operands for '{token}'")
-                    right = stack.pop()
-                    left = stack.pop()
-                    stack.append(self.eval_operator(token, right, left))
+                if len(stack) < 2:
+                    raise ValueError(f"Missing operands for '{token}'")
+                right = stack.pop()
+                left = stack.pop()
+                stack.append(self._operation(token, right, left))
+            previous = token
         if len(stack) != 1:
             raise ValueError("Invalid expression: extra items remain on the stack")
-        return stack[0]
+        return stack[0]()

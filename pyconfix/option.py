@@ -71,10 +71,6 @@ class ConfigOption:
         if option_type != ConfigOptionType.ACTION and option_type != ConfigOptionType.GROUP and needs:
             raise ValueError(f"The 'needs' parameter is only valid for action and group options, not {option_type} options")
         
-        if needs:
-            if not callable(needs):
-                raise ValueError(f"The 'needs' for option {name} must be a callable")
-
         if option_type == ConfigOptionType.GROUP and not isinstance(options, list):
             raise ValueError(f"Group option {name} must have a list of options")
 
@@ -96,31 +92,33 @@ class ConfigOption:
         self._value = default
         self.data = data
         self.description = description
-        self.dependencies = self._compile_dependencies(dependencies)
+        self.dependencies = self._compile_expression(dependencies, "dependencies")
         self.options = options or []
         self.choices = choices or []
         self.expanded = expanded
-        self.needs = needs
+        # Unlike dependencies, needs may run actions: `A() && B()`.
+        self.needs = self._compile_expression(needs, "needs", allow_calls=True)
         self.do_not_cache = do_not_cache
         self.parent = None
 
-    def _compile_dependencies(self, dependencies):
-        """Compile a dependency expression into a ``predicate(x) -> bool``.
+    def _compile_expression(self, expression, field, allow_calls=False):
+        """Compile a dependency or needs expression into a ``predicate(x)``.
 
         ``x`` is the evaluation session, so names resolve when the predicate runs.
         By then the whole tree is registered, whatever order options were added in.
         """
-        if not dependencies:
+        if not expression:
             return None
-        if callable(dependencies):
-            return dependencies
-        if not isinstance(dependencies, str):
-            raise ValueError(f"The 'dependencies' for option {self.name} must be a string or a callable")
+        if callable(expression):
+            return expression
+        if not isinstance(expression, str):
+            raise ValueError(f"The '{field}' for option {self.name} must be a string or a callable")
 
-        self.postfix_dependencies = shunting_yard(tokenize(dependencies))
+        postfix = shunting_yard(tokenize(expression))
+        setattr(self, f"postfix_{field}", postfix)
 
         return lambda x: BooleanExpressionParser().evaluate_postfix(
-            self.postfix_dependencies, getter=lambda key: getattr(x, key))
+            postfix, getter=lambda key: getattr(x, key), allow_calls=allow_calls)
 
     @property
     def value(self):

@@ -159,7 +159,7 @@ def test_needs_only_on_action_or_group():
 def test_needs_must_be_callable():
     with pytest.raises(ValueError):
         ConfigOption(name="A", option_type=ConfigOptionType.ACTION,
-                     default=lambda x: 1, needs="not-callable")
+                     default=lambda x: 1, needs=5)
 
 
 # --------------------------------------------------------------------------- #
@@ -374,3 +374,4 @@ def test_enum_choices_must_be_strings_without_white_space(choices):
 def test_enum_choices_must_be_strings_in_schema():
     with pytest.raises(ValueError, match="E"):
         parse_options(Core(), {"E": {"choices": [1, 2]}})
+

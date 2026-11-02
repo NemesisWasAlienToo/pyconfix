@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from pyconfix import pyconfix, ConfigOptionType, find_schema, serializer
+from pyconfix import pyconfix, ConfigOption, ConfigOptionType, find_schema, serializer
 from pyconfix import __main__ as cli
 from pyconfix import yaml_format
 
@@ -252,3 +252,166 @@ def test_yaml_file_without_pyyaml_still_found_and_asks_for_it(tmp_path, monkeypa
     (tmp_path / "s.yaml").write_text("Main: {}\n")
     monkeypatch.chdir(tmp_path)
     assert find_schema("s") == "s.yaml"
+
+
+# Shell scripts as actions
+ACTION = """
+Main:
+  ENABLED: true
+  WRITE:
+    type: action
+    deps: ENABLED
+    default: echo ran >> out.txt
+"""
+
+
+def lines(tmp_path):
+    out = tmp_path / "out.txt"
+    return out.read_text().split() if out.exists() else []
+
+
+def test_loading_does_not_run_the_script(load, tmp_path):
+    load(ACTION)
+    assert lines(tmp_path) == []
+
+
+def test_shell_action_runs_its_script(load, tmp_path):
+    assert load(ACTION).WRITE() == (True, ["WRITE"])
+    assert lines(tmp_path) == ["ran"]
+
+
+def test_multi_line_script(load, tmp_path):
+    cfg = load("Main:\n  WRITE:\n    type: action\n    default: |\n      echo one >> out.txt\n      echo two >> out.txt\n")
+    cfg.WRITE()
+    assert lines(tmp_path) == ["one", "two"]
+
+
+def test_failing_script_returns_false(load):
+    assert load("Main:\n  FAIL:\n    type: action\n    default: exit 3\n").FAIL() == (False, ["FAIL"])
+
+
+def test_disabled_shell_action_does_not_run(load, tmp_path):
+    cfg = load(ACTION)
+    cfg.get_option("ENABLED").value = False
+    assert cfg.WRITE() == (None, [])
+    assert lines(tmp_path) == []
+
+
+def test_shell_action_can_be_called_from_python_action(load, tmp_path):
+    cfg = load(ACTION)
+
+    @cfg.action_option(needs=lambda x: x.WRITE())
+    def after(x):
+        return "after"
+
+    assert cfg.after() == ("after", ["after", "WRITE"])
+
+
+def test_action_without_a_script_is_rejected(load):
+    with pytest.raises(ValueError, match="BAD"):
+        load("Main:\n  BAD:\n    type: action\n")
+
+
+def test_shell_action_is_not_saved(load):
+    assert load(ACTION).dump() == {"ENABLED": True}
+
+
+# needs in a schema
+CHAIN = """
+Main:
+  SWITCH: true
+  FIRST:
+    type: action
+    default: echo first >> out.txt
+  FAILS:
+    type: action
+    default: echo fails >> out.txt; exit 1
+  SECOND:
+    type: action
+    default: echo second >> out.txt
+  LAST:
+    type: action
+    needs: FIRST() && SECOND()
+    default: echo last >> out.txt
+  STOPS:
+    type: action
+    needs: FAILS() && SECOND()
+    default: echo stops >> out.txt
+  EITHER:
+    type: action
+    needs: FAILS() || SECOND()
+    default: echo either >> out.txt
+  BY_VALUE:
+    type: action
+    needs: SWITCH && FIRST()
+    default: echo value >> out.txt
+"""
+
+
+def test_needs_runs_actions_in_order(load, tmp_path):
+    cfg = load(CHAIN)
+    assert cfg.LAST() == (True, ["LAST", "FIRST", "SECOND"])
+    assert lines(tmp_path) == ["first", "second", "last"]
+
+
+def test_needs_stops_at_the_first_failure(load, tmp_path):
+    cfg = load(CHAIN)
+    assert cfg.STOPS() == (None, ["STOPS", "FAILS"])
+    assert lines(tmp_path) == ["fails"]
+
+
+def test_needs_or_is_a_fallback(load, tmp_path):
+    assert load(CHAIN).EITHER()[0] is True
+    assert lines(tmp_path) == ["fails", "second", "either"]
+
+
+def test_needs_mixes_values_and_calls(load, tmp_path):
+    cfg = load(CHAIN)
+    cfg.get_option("SWITCH").value = False
+    assert cfg.BY_VALUE() == (None, ["BY_VALUE"])
+    assert lines(tmp_path) == []
+
+
+def test_action_used_twice_in_a_run_executes_once(load, tmp_path):
+    cfg = load("Main:\n  A:\n    type: action\n    default: echo a >> out.txt\n  B:\n    type: action\n    needs: A() && A()\n    default: echo b >> out.txt\n")
+    cfg.B()
+    assert lines(tmp_path) == ["a", "b"]
+
+
+def test_calls_are_not_allowed_in_dependencies(load, tmp_path):
+    cfg = load("Main:\n  A:\n    type: action\n    default: echo a >> out.txt\n  N:\n    default: 1\n    deps: A()\n")
+    with pytest.raises(ValueError, match=r"not allowed in this context: A\(\)"):
+        cfg.N
+    assert lines(tmp_path) == []
+
+
+def test_needs_on_a_group_reaches_its_actions(load, tmp_path):
+    cfg = load("""
+Main:
+  SETUP:
+    type: action
+    default: exit 1
+  G:
+    type: group
+    needs: SETUP()
+    options:
+      WRITE:
+        type: action
+        default: echo ran >> out.txt
+""")
+    assert cfg.WRITE()[0] is None
+    assert lines(tmp_path) == []
+
+
+def test_needs_string_works_in_the_python_api():
+    cfg = pyconfix()
+    cfg.add_options(ConfigOption("FLAG", False))
+
+    @cfg.action_option(needs="FLAG")
+    def act(x):
+        return 1
+
+    assert cfg.act()[0] is None
+    cfg.get_option("FLAG").value = True
+    assert cfg.act()[0] == 1
+

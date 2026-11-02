@@ -14,6 +14,7 @@ built options are handed to the core manager.
 """
 
 import os
+import subprocess
 
 from .option import ConfigOption, ConfigOptionType
 from .serializer import available_extensions, extensions, read
@@ -95,6 +96,11 @@ def _normalize_fields(name, option_data):
     return normalized
 
 
+def shell_action(script):
+    """An action body that runs ``script`` in a shell. True if it exits with 0."""
+    return lambda x: subprocess.run(script, shell=True).returncode == 0
+
+
 def parse_options(core, options_data, base_path=None):
     """Build the top-level options for one schema section into a list.
 
@@ -132,13 +138,6 @@ def _parse_option(core, name, option_data, base_path=None):
 
     option_data = _normalize_fields(name, option_data)
 
-    if 'needs' in option_data:
-        # 'needs' must be a callable, which JSON cannot express; it may be
-        # supported in the schema later, but for now it is Python-API only.
-        raise ValueError(
-            f"Option '{name}': 'needs' is not supported in the JSON schema; "
-            "define it via the Python API instead")
-
     option_type_name = ''
     def_value = option_data.get('default', None)
     if 'type' in option_data:
@@ -158,6 +157,10 @@ def _parse_option(core, name, option_data, base_path=None):
         option_type_name = ConfigOptionType.GROUP
         option_data = {'options': option_data}
 
+    default = option_data.get('default', def_value)
+    if option_type_name == ConfigOptionType.ACTION and isinstance(default, str):
+        default = shell_action(default)
+
     if option_type_name in core.aliases:
         custom_type = core.aliases[option_type_name]
         option = custom_type.clone_with(
@@ -172,7 +175,7 @@ def _parse_option(core, name, option_data, base_path=None):
         option = ConfigOption(
             name=name,
             option_type=option_type_name,
-            default=option_data.get('default', def_value),
+            default=default,
             description=option_data.get('description'),
             data=option_data.get('data'),
             dependencies=option_data.get('dependencies', ""),

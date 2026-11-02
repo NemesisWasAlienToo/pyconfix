@@ -179,3 +179,99 @@ def test_extra_items_on_stack_raises():
     parser = BooleanExpressionParser()
     with pytest.raises(ValueError):
         parser.evaluate_postfix(["1", "2"], getter=lambda k: None)   # two operands, no operator
+
+
+# --------------------------------------------------------------------------- #
+# Calls: NAME() runs only when allowed, && and || skip their right side
+# --------------------------------------------------------------------------- #
+
+def calling(expr, **functions):
+    return BooleanExpressionParser().evaluate_postfix(
+        shunting_yard(tokenize(expr)), getter=lambda k: functions[k], allow_calls=True)
+
+
+def recorder(result):
+    calls = []
+    return (lambda: calls.append(1) or result), calls
+
+
+def test_call_has_its_own_token():
+    assert shunting_yard(tokenize("A() && B()")) == ["A", "()", "B", "()", "&&"]
+
+
+def test_call_runs_the_function():
+    function, calls = recorder(7)
+    assert calling("A()", A=function) == 7
+    assert calls == [1]
+
+
+def test_name_without_call_does_not_run_it():
+    function, calls = recorder(7)
+    assert calling("A", A=function) is function
+    assert calls == []
+
+
+@pytest.mark.parametrize("expr, first, second, ran_second, expected", [
+    ("A() && B()", True, True, True, True),
+    ("A() && B()", False, True, False, False),
+    ("A() || B()", True, True, False, True),
+    ("A() || B()", False, True, True, True),
+    ("A() || B()", False, False, True, False),
+])
+def test_logical_operators_skip_the_right_side(expr, first, second, ran_second, expected):
+    a, _ = recorder(first)
+    b, b_calls = recorder(second)
+    assert calling(expr, A=a, B=b) is expected
+    assert bool(b_calls) is ran_second
+
+
+def test_operands_run_left_to_right():
+    order = []
+    a = lambda: order.append("a") or 1
+    b = lambda: order.append("b") or 2
+    assert calling("A() + B()", A=a, B=b) == 3
+    assert order == ["a", "b"]
+
+
+@pytest.mark.parametrize("expr, expected", [
+    ("!A()", False),
+    ("-A() == -1", True),
+    ("(A())", 1),
+    ("A() + 1 == 2", True),
+    ("(A() && A()) || A()", True),
+])
+def test_call_inside_larger_expressions(expr, expected):
+    assert calling(expr, A=lambda: 1) == expected
+
+
+def test_calls_are_refused_by_default():
+    function, calls = recorder(1)
+    with pytest.raises(ValueError, match=r"not allowed in this context: A\(\)"):
+        BooleanExpressionParser().evaluate_postfix(["A", "()"], getter=lambda k: function)
+    assert calls == []
+
+
+def test_refused_call_raises_even_if_it_would_be_skipped():
+    tokens = shunting_yard(tokenize("false && A()"))
+    with pytest.raises(ValueError, match="not allowed"):
+        BooleanExpressionParser().evaluate_postfix(tokens, getter=lambda k: None)
+
+
+@pytest.mark.parametrize("expr", ["A(1)", "A(B)", "A(1, 2)", "A(", "A(()"])
+def test_calls_take_no_arguments(expr):
+    with pytest.raises(ValueError):
+        shunting_yard(tokenize(expr))
+
+
+def test_calling_a_value_raises():
+    with pytest.raises(ValueError, match="'A' cannot be called"):
+        calling("A()", A=5)
+
+
+def test_parentheses_after_an_operator_are_not_a_call():
+    assert ev("A && (B)", A=True, B=True) is True
+
+
+def test_skipped_side_is_not_resolved():
+    assert ev("false && A") is False
+

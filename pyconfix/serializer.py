@@ -212,25 +212,8 @@ def _parse_option(core, name, option_data, base_path=None):
         option_type_name = ConfigOptionType.GROUP
         option_data = {'options': option_data}
 
-    option = ConfigOption(
-        name=name,
-        option_type=ConfigOptionType.STRING,
-        default=option_data.get('default', def_value),
-        description=option_data.get('description'),
-        data=option_data.get('data'),
-        dependencies=option_data.get('dependencies', ""),
-        needs=option_data.get('needs', ""),
-        do_not_cache=option_data.get('do_not_cache', False),
-        choices=option_data.get('choices', []),
-        options=[]
-    )
-    try:
-        option.option_type = ConfigOptionType(option_type_name)
-    except ValueError:
-        custom_type = core.aliases.get(option_type_name)
-        if custom_type is None:
-            raise ValueError(f"Type {option_type_name} for option '{name}' is not a valid type")
-
+    custom_type = core.aliases.get(option_type_name)
+    if custom_type:
         option = custom_type.clone_with(
             name=name,
             default=option_data.get('default', custom_type.default),
@@ -239,14 +222,21 @@ def _parse_option(core, name, option_data, base_path=None):
             do_not_cache=option_data.get('do_not_cache', custom_type.do_not_cache),
             dependencies=option_data.get('dependencies', custom_type.dependencies),
         )
+    else:
+        option = ConfigOption(
+            name=name,
+            option_type=option_type_name,
+            default=option_data.get('default', def_value),
+            description=option_data.get('description'),
+            data=option_data.get('data'),
+            dependencies=option_data.get('dependencies', ""),
+            needs=option_data.get('needs', ""),
+            do_not_cache=option_data.get('do_not_cache', False),
+            choices=option_data.get('choices', []),
+            options=[]
+        )
     if option.option_type == ConfigOptionType.GROUP and 'options' in option_data:
         option.options = parse_options(core, option_data['options'], base_path)
-    elif option.option_type == ConfigOptionType.ENUM:
-        # Built as STRING above, so ConfigOption.__init__ did not coerce an
-        # out-of-range default; do it here (mirroring the ENUM constructor path).
-        if option.default not in option.choices:
-            option.default = option.choices[0]
-        option.value = option.default
 
     return option
 

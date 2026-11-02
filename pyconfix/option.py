@@ -98,11 +98,12 @@ class ConfigOption:
         if option_type == ConfigOptionType.EXTERNAL and callable(default):
             raise ValueError(f"External option {name} cannot have a callable default")
 
+        if default is not None and not isinstance(default, self.VALUE_TYPES.get(option_type, object)):
+            raise ValueError(f"Invalid default '{default}' for {option_type} option '{name}'")
+
         self.name = name
         self.option_type = option_type
         self.default = default
-        # Not the setter: a schema option is built as STRING before its real type
-        # is known, and defaults are not user values.
         self._value = default
         self.data = data
         self.description = description

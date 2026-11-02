@@ -212,8 +212,8 @@ def _parse_option(core, name, option_data, base_path=None):
         option_type_name = ConfigOptionType.GROUP
         option_data = {'options': option_data}
 
-    custom_type = core.aliases.get(option_type_name)
-    if custom_type:
+    if option_type_name in core.aliases:
+        custom_type = core.aliases[option_type_name]
         option = custom_type.clone_with(
             name=name,
             default=option_data.get('default', custom_type.default),

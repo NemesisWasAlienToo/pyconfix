@@ -22,10 +22,8 @@ from .option import *
 def _enum_choice_exists(config, key):
     """True if ``key`` names a choice of some ENUM option — used when an enum
     choice appears as a bare token in a dependency (e.g. ``MODE == DEBUG``)."""
-    key_upper = key.upper()
     return any(
-        opt.option_type == ConfigOptionType.ENUM
-        and any(choice.upper() == key_upper for choice in opt.choices)
+        opt.option_type == ConfigOptionType.ENUM and key in opt.choices
         for opt in config.option_map.values()
     )
 
@@ -112,6 +110,8 @@ class Core:
         """Register an alias and guard against accidental duplicates."""
         if alias_option.option_type != ConfigOptionType.ENUM:
             raise ValueError("Only ENUM aliases are supported for now")
+        if alias_option.name in list(ConfigOptionType):
+            raise ValueError(f"Alias '{alias_option.name}' has the name of a built-in type")
 
         existing = self.aliases.get(alias_option.name)
         if existing:

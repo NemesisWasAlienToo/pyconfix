@@ -13,6 +13,7 @@ import pytest
 from pyconfix import pyconfix, Core, ConfigOption, ConfigOptionType
 from pyconfix import __main__ as cli
 from pyconfix.parser import tokenize, shunting_yard, BooleanExpressionParser
+from pyconfix.serializer import parse_options
 
 
 def write_schema(tmp_path, monkeypatch, schema, name="schema.json"):
@@ -302,6 +303,21 @@ def test_cli_option_parses_negative_int(monkeypatch):
 #    (clone_with only forwarded default/description/dependencies).
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.parametrize("name", list(ConfigOptionType))
+def test_alias_cannot_use_builtin_type_name(name):
+    core = Core()
+    with pytest.raises(ValueError, match=str(name)):
+        core.register_alias(str(name), ConfigOptionType.ENUM, ["ON", "OFF"])
+    assert core.aliases == {}
+
+
+def test_alias_with_other_name_is_registered():
+    core = Core()
+    core.register_alias("tri-state", ConfigOptionType.ENUM, ["ON", "OFF"])
+    option = parse_options(core, {"N": {"type": "tri-state", "default": "ON"}})[0]
+    assert option.option_type == ConfigOptionType.ENUM
+
+
 def test_alias_typed_option_keeps_schema_data(tmp_path, monkeypatch):
     name = write_schema(tmp_path, monkeypatch, {"S": {
         "TRI": {"type": "tri-state", "data": ["WIN32"]}}})
@@ -404,6 +420,23 @@ def test_string_dependency_on_action_option():
         return 1
 
     assert cfg.act() == (None, [])
+
+
+def test_enum_choice_attribute_is_case_sensitive():
+    core = Core()
+    core.add_options(ConfigOption("MODE", "DEBUG", choices=["DEBUG", "INFO"]))
+    assert core.DEBUG == "DEBUG"
+    with pytest.raises(AttributeError, match="Invalid key: 'debug'"):
+        core.debug
+
+
+def test_enum_choice_token_in_dependency_is_case_sensitive():
+    core = Core()
+    core.add_options(
+        ConfigOption("MODE", "DEBUG", choices=["DEBUG", "INFO"]),
+        ConfigOption("N", 1, dependencies="MODE == debug"))
+    with pytest.raises(AttributeError, match="Invalid key: 'debug'"):
+        core.N
 
 
 def test_string_dependency_with_enum_choice_token():
